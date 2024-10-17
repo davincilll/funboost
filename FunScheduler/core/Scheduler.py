@@ -5,6 +5,8 @@ import types
 import typing
 from functools import wraps
 
+from FunScheduler.core.utils.module_loading import import_string
+from FunScheduler.settings import settings
 from funboost.concurrent_pool.async_helper import simple_run_in_executor
 from funboost.core.func_params_model import BoosterParams, PriorityConsumingControlConfig
 from funboost.core.loggers import flogger, logger_prompt
@@ -15,10 +17,46 @@ from funboost.utils.ctrl_c_end import ctrl_c_recv
 
 
 # 将scheduler做成一个池类复用
-class SchedulerParams:
+class BoostParams:
     queue_name: str
     max_retry_times: int
-    msg_expire_senconds: typing.Union[float, int]
+    msg_expire_seconds: typing.Union[float, int]
+    def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None):
+        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
+        # 进行初始化
+
+
+
+
+
+class Scheduler:
+    def __init__(self):
+        self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
+        self.consumer = import_string(settings.SCHEDULER["CONSUMER"])
+        self.monitor = import_string(settings.SCHEDULER["MONITOR"])
+        self.concurrent_params = settings.SCHEDULER["CONCURRENT_PARAMS"]
+        self.logger = None
+        self.broker = import_string(settings.BROKER["BACKEND"])
+        # 默认启动参数
+        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
+
+    def check_booster_params(self, params: BoostParams):
+        # 检测运行参数是否和broker匹配
+
+
+
+
+
+
+    def add_job(self, func: typing.Callable,booster_params:BoostParams):
+        pass
+
+
+    def start(self):
+        """
+        自动根据
+        """
+
 
 
 class Booster:

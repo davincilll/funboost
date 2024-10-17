@@ -25,39 +25,36 @@ FunScheduler在每一个进程维护一个Scheduler，用于控制整个框架�
 # 后面再写其他类型的调度器，目前只使用默认的 Scheduler
 
 
-FUN_SCHEDULER_SETTINGS = {
+DEFAULTS = {
     "LOGGER": {
+        "SAVE_LOG": True,  # 是否保存运行日志，在控制台发布
         "SAVE_LOG_LEVEL": "INFO",  # 日志级别
         "LOG_FILE_PATH": "",  # 日志文件路径
     },
     'BROKER': {
-        "default": {
-            # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
-            "BROKER_BACKEND": "funboost.factories.consumer_factory.get_consumer",
-            "publisher_CLASS": "funboost.factories.publisher_factory.get_publisher",
-            "CONSUMER_CLASS": "funboost.factories.consumer_factory.get_consumer",
-            # 监控类，完成对所有当前存在的任务的捕获，以及心跳上报，获取所有的任务，任务启停，对任务中间状态的干涉等等。
-            "MONITOR_CLASS": "funboost.factories.monitor_factory.get_monitor",
-            "LOCATION": "",
-            "OPTIONS": {},
+        # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
+        "BACKEND": "funboost.factories.consumer_factory.get_consumer",
+        "LOCATION": "redis5://:J8689588@175.178.235.132:6379/0",
+        "OPTIONS": {
+
         },
     },
-    # 进行函数运行的一些持久化操作，默认为本地sqlite保存
-    'DEFAULT_DATABASES': {
-        # 分组可以在scheduler配置中进行切换，或者在局部配置中使用
-        "default": {
-            "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
-            "LOCATION": "",
-            "OPTIONS": {},
-        }
+    # 进行函数运行的一些持久化操作，默认为redis进行保存
+    'PERSISTENCE': {
+        "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
+        "LOCATION": "",
+        "OPTIONS": {},
     },
     # 这里的scheduler 还需要去完成获取所有
     'SCHEDULER': {
         "TIMEZONE": "Asia/Shanghai",
-        "SAVE_LOG": True,  # 是否保存运行日志，在控制台发布
         "SAVE_STATUS": True,  # 是否保存函数的运行状态,使用DATABASES配置
         "SAVE_RESULT": True,  # 是否保存函数的运行结果,使用DATABASES配置
         "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,  # 是否使用分布式控制频率
+        "publisher_CLASS": "funboost.factories.publisher_factory.get_publisher",
+        "CONSUMER_CLASS": "funboost.factories.consumer_factory.get_consumer",
+        # 监控类，完成对所有当前存在的任务的捕获，以及心跳上报，获取所有的任务，任务启停，对任务中间状态的干涉等等。
+        "MONITOR_CLASS": "funboost.factories.monitor_factory.get_monitor",
         "CONCURRENT": {
             # 这里的模式不能被覆写
             "MODE": SchedulerConcurrentModeEnum.THREAD,
@@ -66,7 +63,9 @@ FUN_SCHEDULER_SETTINGS = {
         },
         # 默认的调度参数
         "DEFAULT_PARAMS": {
-            "USE_DISTRIBUTED_FREQUENCY_CONTROL", True
+            "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,
+            "AUTO_START_CONSUMING": True,
+
         }
     },
 }

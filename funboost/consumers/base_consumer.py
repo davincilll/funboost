@@ -204,7 +204,7 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         if is_main_process:
             self.logger.info(f'{self.queue_name} consumer 的消费者配置:\n {self.consumer_params.json_str_value()}')
         atexit.register(self.join_shedual_task_thread)
-
+        # 这里是自动进行消费
         if self.consumer_params.is_auto_start_consuming_message:
             _ = self.publisher_of_same_queue
             self.start_consuming_message()
@@ -1026,7 +1026,7 @@ def wait_for_possible_has_finish_all_tasks_by_conusmer_list(consumer_list: typin
             pool.submit(consumer.wait_for_possible_has_finish_all_tasks(minutes))
 
 
-class DistributedConsumerStatistics(RedisMixin, FunboostFileLoggerMixin):
+class DistributedConsumerStatistics(RedisMixin):
     """
     获取分布式中的状态的，分布式控频率，远程启停
     """

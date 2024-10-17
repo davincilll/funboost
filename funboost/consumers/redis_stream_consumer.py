@@ -68,14 +68,15 @@ class RedisStreamConsumer(AbstractConsumer, RedisMixin):
         #                                     min_idle_time=0, message_ids=[kw['msg_id']]))
 
     def _requeue_tasks_which_unconfirmed(self):
+        """
+        请求未确认的tasks
+        """
         lock_key = f'funboost_lock__requeue_tasks_which_unconfirmed:{self._queue_name}'
         with decorators.RedisDistributedLockContextManager(self.redis_db_frame, lock_key, ) as lock:
             if lock.has_aquire_lock:
                 self._distributed_consumer_statistics.send_heartbeat()
                 current_queue_hearbeat_ids = self._distributed_consumer_statistics.get_queue_heartbeat_ids(without_time=True)
                 xinfo_consumers = self.redis_db_frame.xinfo_consumers(self._queue_name, self.group)
-                # print(current_queue_hearbeat_ids)
-                # print(xinfo_consumers)
                 for xinfo_item in xinfo_consumers:
                     # print(xinfo_item)
                     if xinfo_item['idle'] > 7 * 24 * 3600 * 1000 and xinfo_item['pending'] == 0:
