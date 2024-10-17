@@ -1,29 +1,28 @@
 import copy
 import datetime
-import json
 import os
 import socket
+import sys
 import threading
 import time
 import uuid
 
 import pymongo
 import pymongo.errors
-import sys
-
 from pymongo import IndexModel, ReplaceOne
 
 from funboost.core.func_params_model import FunctionResultStatusPersistanceConfig
 from funboost.core.helper_funs import get_publish_time, delete_keys_and_return_new_dict
+from funboost.core.loggers import FunboostFileLoggerMixin
 from funboost.core.serialization import Serialization
 from funboost.utils import time_util, decorators
 from funboost.utils.mongo_util import MongoMixin
-# from nb_log import LoggerMixin
-from funboost.core.loggers import FunboostFileLoggerMixin
+
 
 class RunStatus:
     running = 'running'
     finish = 'finish'
+
 
 class FunctionResultStatus():
     host_name = socket.gethostname()
@@ -160,10 +159,6 @@ class ResultPersistenceHelper(MongoMixin, FunboostFileLoggerMixin):
                 # self._mongo_bulk_write_helper.add_task(InsertOne(item2))  # 自动离散批量聚合方式。
                 with self._bulk_list_lock:
                     self._bulk_list.append(ReplaceOne({'_id': item2['_id']}, item2, upsert=True))
-                    # if time.time() - self._last_bulk_insert_time > 0.5:
-                    #     self.task_status_col.bulk_write(self._bulk_list, ordered=False)
-                    #     self._bulk_list.clear()
-                    #     self._last_bulk_insert_time = time.time()
                     if not self._has_start_bulk_insert_thread:
                         self._has_start_bulk_insert_thread = True
                         decorators.keep_circulating(time_sleep=0.2, is_display_detail_exception=True, block=False,

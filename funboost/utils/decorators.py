@@ -1,30 +1,28 @@
 # coding=utf-8
-import base64
-import copy
 import abc
-import logging
-import random
-import uuid
-from typing import TypeVar
-# noinspection PyUnresolvedReferences
-from contextlib import contextmanager
-import functools
+import copy
 import json
+import logging
 import os
 import sys
 import threading
 import time
 import traceback
 import unittest
+import uuid
+# noinspection PyUnresolvedReferences
+from contextlib import contextmanager
 from functools import wraps
+from typing import TypeVar
+
 # noinspection PyUnresolvedReferences
 import pysnooper
-from tomorrow3 import threads as tomorrow_threads
-
-from funboost.utils import LogManager, nb_print, LoggerMixin
 # noinspection PyUnresolvedReferences
 # from funboost.utils.custom_pysnooper import _snoop_can_click, snoop_deco, patch_snooper_max_variable_length
 from nb_log import LoggerLevelSetterMixin
+from tomorrow3 import threads as tomorrow_threads
+
+from funboost.utils import LogManager, nb_print, LoggerMixin
 
 os_name = os.name
 # nb_print(f' 操作系统类型是  {os_name}')
@@ -147,8 +145,11 @@ def synchronized(func):
 
     return lock_func
 
+
 ClSX = TypeVar('CLSX')
-def singleton(cls:ClSX)  -> ClSX:
+
+
+def singleton(cls: ClSX) -> ClSX:
     """
     单例模式装饰器,新加入线程锁，更牢固的单例模式，主要解决多线程如100线程同时实例化情况下可能会出现三例四例的情况,实测。
     """
@@ -164,12 +165,12 @@ def singleton(cls:ClSX)  -> ClSX:
 
     return _singleton
 
-def singleton_no_lock(cls:ClSX)  -> ClSX:
+
+def singleton_no_lock(cls: ClSX) -> ClSX:
     """
     单例模式装饰器,新加入线程锁，更牢固的单例模式，主要解决多线程如100线程同时实例化情况下可能会出现三例四例的情况,实测。
     """
     _instance = {}
-
 
     @wraps(cls)
     def _singleton(*args, **kwargs):
@@ -178,6 +179,7 @@ def singleton_no_lock(cls:ClSX)  -> ClSX:
         return _instance[cls]
 
     return _singleton
+
 
 class SingletonMeta(type):
     _instances = {}

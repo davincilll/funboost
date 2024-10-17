@@ -6,7 +6,6 @@ import typing
 from functools import wraps
 
 from funboost.concurrent_pool.async_helper import simple_run_in_executor
-from funboost.core.exceptions import BoostDecoParamsIsOldVersion
 from funboost.core.func_params_model import BoosterParams, PriorityConsumingControlConfig
 from funboost.core.loggers import flogger, logger_prompt
 from funboost.core.msg_result_getter import AsyncResult, AioAsyncResult
@@ -16,54 +15,9 @@ from funboost.utils.ctrl_c_end import ctrl_c_recv
 
 
 class Booster:
-    """
-    funboost极其重视代码能在pycharm下自动补全。元编程经常造成在pycharm下代码无法自动补全提示，主要是实现代码补全难。
-    这种__call__写法在pycahrm下 不仅能补全消费函数的 push consume等方法，也能补全函数本身的入参，一举两得。代码能自动补全很重要。
-    一个函数fun被 boost装饰器装饰后， isinstance(fun,Booster) 为True.
 
-    pydatinc pycharm编程代码补全,请安装 pydantic插件, 在pycharm的  file -> settings -> Plugins -> 输入 pydantic 搜索,点击安装 pydantic 插件.
-
-    Booster 是把Consumer 和 Publisher的方法集为一体。
-    """
-
-    def __init__(self, queue_name: typing.Union[BoosterParams, str] = None, *, boost_params: BoosterParams = None, **kwargs):
-        """
-        @boost 这是funboost框架最重要的一个函数，必须看懂BoosterParams里面的入参有哪些。
-        pydatinc pycharm编程代码补全,请安装 pydantic插件, 在pycharm的  file -> settings -> Plugins -> 输入 pydantic 搜索,点击安装 pydantic 插件.
-        (高版本的pycharm pydantic是内置支持代码补全的,由此可见,pydantic太好了,pycharm官方都来支持)
-
-        强烈建议所有入参放在 BoosterParams() 中,不要直接在BoosterParams之外传参.现在是兼容老的直接在@boost中传参方式.
-        """
-
-        """
-        '''
-        # @boost('queue_test_f01', qps=0.2, ) # 老的入参方式
-        @boost(BoosterParams(queue_name='queue_test_f01', qps=0.2, )) # 新的入参方式,所有入参放在 最流行的三方包 pydantic model BoosterParams 里面.
-        def f(a, b):
-            print(a + b)
-
-        for i in range(10, 20):
-            f.pub(dict(a=i, b=i * 2))
-            f.push(i, i * 2)
-        f.consume()
-        # f.multi_process_conusme(8)             # # 这个是新加的方法，细粒度 线程 协程并发 同时叠加8个进程，速度炸裂。
-        '''
-        """
-
-        # 以下代码很复杂，主要是兼容老的在@boost直接传参的方式,强烈建议使用新的入参方式,所有入参放在一个 BoosterParams 中，那就不需要理会下面这段逻辑.
-        if isinstance(queue_name, str):
-            if boost_params is None:
-                boost_params = BoosterParams(queue_name=queue_name)
-        elif queue_name is None and boost_params is None:
-            raise ValueError('boost 入参错误')
-        elif isinstance(queue_name, BoosterParams):
-            boost_params = queue_name
-        if isinstance(queue_name, str) or kwargs:
-            flogger.warning(f'''你的 {queue_name} 队列， funboost 40.0版本以后： {BoostDecoParamsIsOldVersion.new_version_change_hint}''')
-        boost_params_merge = boost_params.copy()
-        boost_params_merge.update_from_dict(kwargs)
-        self.boost_params: BoosterParams = boost_params_merge
-        self.queue_name = boost_params_merge.queue_name
+    def __init__(self, boost_params: BoosterParams = None):
+        self.boost_params: BoosterParams = boost_params.copy()
 
     def __str__(self):
         return f'{type(self)}  队列为 {self.queue_name} 函数为 {self.consuming_function} 的 booster'
@@ -98,8 +52,6 @@ class Booster:
             self.consumer = consumer
 
             self.publisher = consumer.publisher_of_same_queue
-            # self.publish = self.pub = self.apply_async = consumer.publisher_of_same_queue.publish
-            # self.push = self.delay = consumer.publisher_of_same_queue.push
             self.publish = self.pub = self.apply_async = self._safe_publish
             self.push = self.delay = self._safe_push
 
@@ -166,9 +118,8 @@ class Booster:
         from funboost.core.muliti_process_enhance import multi_process_pub_params_list
         multi_process_pub_params_list(self, params_list, process_num)
 
-
-boost = Booster
-task_deco = boost  # 两个装饰器名字都可以。task_deco是原来名字，兼容一下。
+    # noinspection PyDefaultArgument
+    # noinspection PyMethodMayBeStatic
 
 
 class BoostersManager:

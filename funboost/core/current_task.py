@@ -1,53 +1,11 @@
 import abc
+import asyncio
 import contextvars
-from dataclasses import dataclass
 import logging
 import threading
-import asyncio
+from dataclasses import dataclass
 
 from funboost.core.function_result_status_saver import FunctionResultStatus
-
-""" 用法例子 
-    '''
-    fct = funboost_current_task()
-    print(fct.function_result_status.get_status_dict())
-    print(fct.function_result_status.task_id)
-    print(fct.function_result_status.run_times)
-    print(fct.full_msg)
-    '''
-import random
-import time
-
-from funboost import boost, FunctionResultStatusPersistanceConfig,BoosterParams
-from funboost.core.current_task import funboost_current_task
-
-@boost(BoosterParams(queue_name='queue_test_f01', qps=2,concurrent_num=5,
-       function_result_status_persistance_conf=FunctionResultStatusPersistanceConfig(
-           is_save_status=True, is_save_result=True, expire_seconds=7 * 24 * 3600)))
-def f(a, b):
-    fct = funboost_current_task()
-    print(fct.function_result_status.get_status_dict())
-    print(fct.function_result_status.task_id)
-    print(fct.function_result_status.run_times)
-    print(fct.full_msg)
-
-    time.sleep(20)
-    if random.random() > 0.5:
-        raise Exception(f'{a} {b} 模拟出错啦')
-    print(a+b)
-
-    return a + b
-
-
-if __name__ == '__main__':
-    # f(5, 6)  # 可以直接调用
-
-    for i in range(0, 200):
-        f.push(i, b=i * 2)
-
-    f.consume()
-
-    """
 
 
 @dataclass
@@ -61,22 +19,6 @@ class FctContext:
     function_result_status: FunctionResultStatus
     logger: logging.Logger
     asyncio_use_thread_concurrent_mode: bool = False
-
-# class FctContext:
-#     """
-#     fct 是 funboost current task 的简写
-#     """
-#
-#     def __init__(self, function_params: dict,
-#                  full_msg: dict,
-#                  function_result_status: FunctionResultStatus,
-#                  logger: logging.Logger,
-#                  asyncio_use_thread_concurrent_mode: bool = False):
-#         self.function_params = function_params
-#         self.full_msg = full_msg
-#         self.function_result_status = function_result_status
-#         self.logger = logger
-#         self.asyncio_use_thread_concurrent_mode = asyncio_use_thread_concurrent_mode
 
 
 class _BaseCurrentTask(metaclass=abc.ABCMeta):
@@ -150,7 +92,7 @@ def is_asyncio_environment():
 
 def funboost_current_task():
     if is_asyncio_environment():
-        if hasattr(thread_current_task._fct_local_data,'fct_context') and thread_current_task.get_fct_context().asyncio_use_thread_concurrent_mode is True:
+        if hasattr(thread_current_task._fct_local_data, 'fct_context') and thread_current_task.get_fct_context().asyncio_use_thread_concurrent_mode is True:
             # 如果用户使用的是默认的ConcurrentModeEnum.THREADING并发模式来运行async def 函数，那么也使用线程获取上下文
             return thread_current_task
         else:
@@ -173,6 +115,7 @@ class FctContextThread(threading.Thread):
     """
     这个类自动把当前线程的 线程上下文 自动传递给新开的线程。
     """
+
     def __init__(self, group=None, target=None, name=None,
                  args=(), kwargs=None, *, daemon=None,
                  ):

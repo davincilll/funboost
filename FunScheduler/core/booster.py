@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import os
 import types
 import typing
@@ -165,6 +166,7 @@ class Booster:
         """
         from funboost.core.muliti_process_enhance import multi_process_pub_params_list
         multi_process_pub_params_list(self, params_list, process_num)
+
 
 
 boost = Booster
