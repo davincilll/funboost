@@ -16,16 +16,6 @@ from funboost.utils.ctrl_c_end import ctrl_c_recv
 
 
 class Booster:
-    """
-    funboost极其重视代码能在pycharm下自动补全。元编程经常造成在pycharm下代码无法自动补全提示，主要是实现代码补全难。
-    这种__call__写法在pycahrm下 不仅能补全消费函数的 push consume等方法，也能补全函数本身的入参，一举两得。代码能自动补全很重要。
-    一个函数fun被 boost装饰器装饰后， isinstance(fun,Booster) 为True.
-
-    pydatinc pycharm编程代码补全,请安装 pydantic插件, 在pycharm的  file -> settings -> Plugins -> 输入 pydantic 搜索,点击安装 pydantic 插件.
-
-    Booster 是把Consumer 和 Publisher的方法集为一体。
-    """
-
     def __init__(self, queue_name: typing.Union[BoosterParams, str] = None, *, boost_params: BoosterParams = None, **kwargs):
         """
         @boost 这是funboost框架最重要的一个函数，必须看懂BoosterParams里面的入参有哪些。
@@ -74,22 +64,14 @@ class Booster:
             return self
         else:
             return types.MethodType(self, instance)
-
     def __call__(self, *args, **kwargs) -> Booster:
+        # 这里是一个类的实例方法
         if len(kwargs) == 0 and len(args) == 1 and isinstance(args[0], typing.Callable):
             consuming_function = args[0]
             self.boost_params.consuming_function = consuming_function
             self.boost_params.consuming_function_raw = consuming_function
-            # print(consuming_function)
-            # print(ClsHelper.get_method_kind(consuming_function))
-            # print(inspect.getsourcelines(consuming_function))
             if self.boost_params.consuming_function_kind is None:
                 self.boost_params.consuming_function_kind = ClsHelper.get_method_kind(consuming_function)
-            # if self.boost_params.consuming_function_kind in [FunctionKind.CLASS_METHOD,FunctionKind.INSTANCE_METHOD]:
-            #     if self.boost_params.consuming_function_class_module is None:
-            #         self.boost_params.consuming_function_class_module = consuming_function.__module__
-            #     if self.boost_params.consuming_function_class_name is None:
-            #         self.boost_params.consuming_function_class_name = consuming_function.__qualname__.split('.')[0]
             logger_prompt.debug(f''' {self.boost_params.queue_name} booster 配置是 {self.boost_params.json_str_value()}''')
             self.consuming_function = consuming_function
             self.is_decorated_as_consume_function = True
@@ -98,8 +80,6 @@ class Booster:
             self.consumer = consumer
 
             self.publisher = consumer.publisher_of_same_queue
-            # self.publish = self.pub = self.apply_async = consumer.publisher_of_same_queue.publish
-            # self.push = self.delay = consumer.publisher_of_same_queue.push
             self.publish = self.pub = self.apply_async = self._safe_publish
             self.push = self.delay = self._safe_push
 
@@ -114,7 +94,7 @@ class Booster:
             self.continue_consume = consumer.continue_consume
 
             wraps(consuming_function)(self)
-            BoostersManager.regist_booster(self.queue_name, self)  # 这一句是登记
+            BoostersManager.regist_booster(self.queue_name, self)
             return self
         else:
             return self.consuming_function(*args, **kwargs)

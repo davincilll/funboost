@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 # @Author  : ydf
 # @Time    : 2022/8/8 0008 13:35
-import json
-from funboost.constant import BrokerEnum
 from funboost.consumers.base_consumer import AbstractConsumer
-from funboost.publishers.persist_queue_publisher import PersistQueuePublisher
 from funboost.core.func_params_model import PublisherParams
+from funboost.publishers.persist_queue_publisher import PersistQueuePublisher
+
 
 class PersistQueueConsumer(AbstractConsumer):
     """

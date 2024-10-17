@@ -2,8 +2,9 @@
 # @Author  : ydf
 # @Time    : 2021/4/3 0008 13:32
 import json
+
 import redis5
-from funboost.constant import BrokerEnum
+
 from funboost.consumers.base_consumer import AbstractConsumer
 from funboost.utils import decorators
 from funboost.utils.redis_manager import RedisMixin
@@ -14,7 +15,7 @@ class RedisStreamConsumer(AbstractConsumer, RedisMixin):
     redis 的 stream 结构 作为中间件实现的。需要redis 5.0以上，redis stream结构 是redis的消息队列，概念类似kafka，功能远超 list结构。
     """
     GROUP = 'funboost_group'
-    BROKER_EXCLUSIVE_CONFIG_DEFAULT = {'group': 'funboost_group','pull_msg_batch_size': 100}
+    BROKER_EXCLUSIVE_CONFIG_DEFAULT = {'group': 'funboost_group', 'pull_msg_batch_size': 100}
 
     def custom_init(self):
         self.group = self.consumer_params.broker_exclusive_config['group'] or self.GROUP
@@ -36,16 +37,16 @@ class RedisStreamConsumer(AbstractConsumer, RedisMixin):
         pull_msg_batch_size = self.consumer_params.broker_exclusive_config['pull_msg_batch_size']
 
         try:
-            self.redis_db_frame.xgroup_create(self._queue_name,self.group , id=0, mkstream=True)
+            self.redis_db_frame.xgroup_create(self._queue_name, self.group, id=0, mkstream=True)
         except redis5.exceptions.ResponseError as e:
             self.logger.info(e)  # BUSYGROUP Consumer Group name already exists  不能重复创建消费者组。
         while True:
             # redis服务端必须是5.0以上，并且确保这个键的类型是stream不能是list数据结构。
             results = self.redis_db_frame.xreadgroup(self.group, self.consumer_identification,
-                                                              {self.queue_name: ">"}, count=pull_msg_batch_size, block=60 * 1000)
+                                                     {self.queue_name: ">"}, count=pull_msg_batch_size, block=60 * 1000)
             if results:
                 # self.logger.debug(f'从redis的 [{self._queue_name}] stream 中 取出的消息是：  {results}  ')
-                self._print_message_get_from_broker( results)
+                self._print_message_get_from_broker(results)
                 # print(results[0][1])
                 for msg_id, msg in results[0][1]:
                     kw = {'body': msg[''], 'msg_id': msg_id}
@@ -85,9 +86,9 @@ class RedisStreamConsumer(AbstractConsumer, RedisMixin):
                         if pending_msg_list:
                             # min_idle_time 不需要，因为加了分布式锁，所以不需要基于idle最小时间的判断，并且启动了基于心跳的确认消费助手，检测消费者掉线或关闭或断开的准确率100%。
                             xclaim_task_list = self.redis_db_frame.xclaim(self._queue_name, self.group,
-                                                                                   self.consumer_identification, force=True,
-                                                                                   min_idle_time=0 * 1000,
-                                                                                   message_ids=[task_item['message_id'] for task_item in pending_msg_list])
+                                                                          self.consumer_identification, force=True,
+                                                                          min_idle_time=0 * 1000,
+                                                                          message_ids=[task_item['message_id'] for task_item in pending_msg_list])
                             if xclaim_task_list:
                                 self.logger.warning(f' {self._queue_name}  的分组 {self.group} 的消费者 {self.consumer_identification} 夺取 断开的消费者 {xinfo_item["name"]}'
                                                     f'  {len(xclaim_task_list)} 个任务，详细是 {xclaim_task_list} ')

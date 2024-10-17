@@ -14,6 +14,13 @@ from funboost.utils.class_utils import ClsHelper
 from funboost.utils.ctrl_c_end import ctrl_c_recv
 
 
+# 将scheduler做成一个池类复用
+class SchedulerParams:
+    queue_name: str
+    max_retry_times: int
+    msg_expire_senconds: typing.Union[float, int]
+
+
 class Booster:
 
     def __init__(self, boost_params: BoosterParams = None):
@@ -66,7 +73,7 @@ class Booster:
             self.continue_consume = consumer.continue_consume
 
             wraps(consuming_function)(self)
-            BoostersManager.regist_booster(self.queue_name, self)  # 这一句是登记
+            BoostersManager.regist_booster(self.queue_name, self)  # 进行注册
             return self
         else:
             return self.consuming_function(*args, **kwargs)

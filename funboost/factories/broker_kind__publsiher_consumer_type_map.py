@@ -83,11 +83,11 @@ broker_kind__publsiher_consumer_type_map = {
     BrokerEnum.EMPTY:(EmptyPublisher,EmptyConsumer),
 
 }
-
+# 这里为每一个消费者类设置一个类属性，将BROKER_KIND 设置为 BrokerEnum
 for broker_kindx, cls_tuple in broker_kind__publsiher_consumer_type_map.items():
     cls_tuple[1].BROKER_KIND = broker_kindx
 
-
+# 动态注册
 def register_custom_broker(broker_kind, publisher_class: typing.Type[AbstractPublisher], consumer_class: typing.Type[AbstractConsumer]):
     """
     动态注册中间件到框架中， 方便的增加中间件类型或者修改是自定义消费者逻辑。
