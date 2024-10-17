@@ -1,10 +1,11 @@
 # coding=utf8
 
 import copy
+from functools import cached_property
+
 import redis5
 
 from funboost.funboost_config_deafult import BrokerConnConfig
-from funboost.utils import decorators
 
 
 def get_redis_conn_kwargs():
@@ -36,7 +37,6 @@ class RedisManager(object):
         return self.redis
 
 
-# noinspection PyArgumentEqualDefault
 class RedisMixin(object):
     """
     可以被作为万能mixin能被继承，也可以单独实例化使用。
@@ -45,13 +45,11 @@ class RedisMixin(object):
     def redis_db_n(self, db):
         return RedisManager(**_get_redis_conn_kwargs_by_db(db)).get_redis()
 
-    @property
-    @decorators.cached_method_result
+    @cached_property
     def redis_db_frame(self):
         return RedisManager(**get_redis_conn_kwargs()).get_redis()
 
-    @property
-    @decorators.cached_method_result
+    @cached_property
     def redis_db_filter_and_rpc_result(self):
         return RedisManager(**_get_redis_conn_kwargs_by_db(BrokerConnConfig.REDIS_DB_FILTER_AND_RPC_RESULT)).get_redis()
 

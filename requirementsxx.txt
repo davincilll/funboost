@@ -1,6 +1,0 @@
-## 这里的不用管，没及时更新维护， 请看setup.py 这才是及时更新的。
-
-pip install funboost 自动安装大部分消息队列的依赖包。
-
-pip install funboost[extra_brokers] 自动安装所有和额外其他消息队列的包。
-

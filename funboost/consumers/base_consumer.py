@@ -87,6 +87,7 @@ class GlobalVars:
 
 # noinspection DuplicatedCode
 class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
+    """整个项目的精髓，这里要好好看看"""
     time_interval_for_check_do_not_run_time = 60
     BROKER_KIND = None
     BROKER_EXCLUSIVE_CONFIG_DEFAULT = {}  # 每种中间件的概念有所不同，用户可以从 broker_exclusive_config 中传递该种中间件特有的配置意义参数。
@@ -125,7 +126,6 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
                 time.sleep(10)
 
     def __init__(self, consumer_params: BoosterParams):
-
         """
         """
         self.raw_consumer_params = copy.copy(consumer_params)
@@ -148,14 +148,10 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
             self._run = self._async_run  # 这里做了自动转化，使用async_run代替run
         self.logger: logging.Logger
         self._build_logger()
-        # stdout_write(f'''{time.strftime("%H:%M:%S")} "{self.consumer_params.auto_generate_info['where_to_instantiate']}"  \033[0;37;44m此行 实例化队列名 {self.queue_name} 的消费者, 类型为 {self.__class__}\033[0m\n''')
+
         print(f'''\033[0m
          "{self.consumer_params.auto_generate_info['where_to_instantiate']}" \033[0m此行 实例化队列名 {self.queue_name} 的消费者, 类型为 {self.__class__} ''')
 
-        # only_print_on_main_process(f'{current_queue__info_dict["queue_name"]} 的消费者配置:\n', un_strict_json_dumps.dict2json(current_queue__info_dict))
-
-        # self._do_task_filtering = consumer_params.do_task_filtering
-        # self.consumer_params.is_show_message_get_from_broker = consumer_params.is_show_message_get_from_broker
         self._redis_filter_key_name = f'filter_zset:{consumer_params.queue_name}' if consumer_params.task_filtering_expire_seconds else f'filter_set:{consumer_params.queue_name}'
         filter_class = RedisFilter if consumer_params.task_filtering_expire_seconds == 0 else RedisImpermanencyFilter
         self._redis_filter = filter_class(self._redis_filter_key_name, consumer_params.task_filtering_expire_seconds)
@@ -179,7 +175,6 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         broker_exclusive_config_merge = dict()
         broker_exclusive_config_merge.update(self.BROKER_EXCLUSIVE_CONFIG_DEFAULT)
         broker_exclusive_config_merge.update(self.consumer_params.broker_exclusive_config)
-        # print(broker_exclusive_config_merge)
         self.consumer_params.broker_exclusive_config = broker_exclusive_config_merge
 
         self._stop_flag = None
@@ -220,16 +215,7 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         self._has_start_delay_task_scheduler = False
         self._consuming_function_is_asyncio = inspect.iscoroutinefunction(self.consuming_function)
         self.custom_init()
-        # develop_logger.warning(consumer_params._log_filename)
-        # self.publisher_params = PublisherParams(queue_name=consumer_params.queue_name, consuming_function=consumer_params.consuming_function,
-        #                                         broker_kind=self.BROKER_KIND, log_level=consumer_params.log_level,
-        #                                         logger_prefix=consumer_params.logger_prefix,
-        #                                         create_logger_file=consumer_params.create_logger_file,
-        #                                         log_filename=consumer_params.log_filename,
-        #                                         logger_name=consumer_params.logger_name,
-        #                                         broker_exclusive_config=self.consumer_params.broker_exclusive_config)
         self.publisher_params = BaseJsonAbleModel.init_by_another_model(PublisherParams, self.consumer_params)
-        # print(self.publisher_params)
         if is_main_process:
             self.logger.info(f'{self.queue_name} consumer 的消费者配置:\n {self.consumer_params.json_str_value()}')
         atexit.register(self.join_shedual_task_thread)
@@ -270,14 +256,6 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
             check_evenlet_monkey_patch()
         else:
             check_not_monkey()
-
-    # def _log_error(self, msg, exc_info=None):
-    #     self.logger.error(msg=f'{msg} \n', exc_info=exc_info, extra={'sys_getframe_n': 3})  # 这是改变日志栈层级
-    #     self.error_file_logger.error(msg=f'{msg} \n', exc_info=exc_info, extra={'sys_getframe_n': 3})
-    #
-    # def _log_critical(self, msg, exc_info=None):
-    #     self.logger.critical(msg=f'{msg} \n', exc_info=exc_info, extra={'sys_getframe_n': 3})
-    #     self.error_file_logger.critical(msg=f'{msg} \n', exc_info=exc_info, extra={'sys_getframe_n': 3})
 
     @property
     @decorators.synchronized
@@ -776,90 +754,6 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
             function_result_status.exception = f'{e.__class__.__name__}    {str(e)}'
             function_result_status.result = FunctionResultStatus.FUNC_RUN_ERROR
         return function_result_status
-
-    # noinspection PyProtectedMember
-    async def _async_run(self, kw: dict, ):
-        # """虽然和上面有点大面积重复相似，这个是为了asyncio模式的，asyncio模式真的和普通同步模式的代码思维和形式区别太大，
-        # 框架实现兼容async的消费函数很麻烦复杂，连并发池都要单独写"""
-        try:
-            t_start_run_fun = time.time()
-            max_retry_times = self._get_priority_conf(kw, 'max_retry_times')
-            current_function_result_status = FunctionResultStatus(self.queue_name, self.consuming_function.__name__, kw['body'], )
-            current_retry_times = 0
-            function_only_params = delete_keys_and_return_new_dict(kw['body'])
-            for current_retry_times in range(max_retry_times + 1):
-                current_function_result_status.run_times = current_retry_times + 1
-                current_function_result_status.run_status = RunStatus.running
-                self._result_persistence_helper.save_function_result_to_mongo(current_function_result_status)
-                current_function_result_status = await self._async_run_consuming_function_with_confirm_and_retry(kw, current_retry_times=current_retry_times,
-                                                                                                                 function_result_status=current_function_result_status)
-                if current_function_result_status.success is True or current_retry_times == max_retry_times or current_function_result_status._has_requeue:
-                    break
-                else:
-                    if self.consumer_params.retry_interval:
-                        await asyncio.sleep(self.consumer_params.retry_interval)
-
-            if not (current_function_result_status._has_requeue and self.BROKER_KIND in [BrokerEnum.RABBITMQ_AMQPSTORM, BrokerEnum.RABBITMQ_PIKA, BrokerEnum.RABBITMQ_RABBITPY]):
-                await simple_run_in_executor(self._confirm_consume, kw)
-            current_function_result_status.run_status = RunStatus.finish
-            await simple_run_in_executor(self._result_persistence_helper.save_function_result_to_mongo, current_function_result_status)
-            if self._get_priority_conf(kw, 'do_task_filtering'):
-                # self._redis_filter.add_a_value(function_only_params)  # 函数执行成功后，添加函数的参数排序后的键值对字符串到set中。
-                await simple_run_in_executor(self._redis_filter.add_a_value, function_only_params)
-            if current_function_result_status.success is False and current_retry_times == max_retry_times:
-                log_msg = f'函数 {self.consuming_function.__name__} 达到最大重试次数 {self._get_priority_conf(kw, "max_retry_times")} 后,仍然失败， 入参是  {function_only_params} '
-                if self.consumer_params.is_push_to_dlx_queue_when_retry_max_times:
-                    log_msg += f'  。发送到死信队列 {self._dlx_queue_name} 中'
-                    await simple_run_in_executor(self.publisher_of_dlx_queue.publish, kw['body'])
-                # self.logger.critical(msg=f'{log_msg} \n', )
-                # self.error_file_logger.critical(msg=f'{log_msg} \n')
-                self.logger.critical(msg=log_msg)
-
-                # self._confirm_consume(kw)  # 错得超过指定的次数了，就确认消费了。
-            if self._get_priority_conf(kw, 'is_using_rpc_mode'):
-                def push_result():
-                    with RedisMixin().redis_db_filter_and_rpc_result.pipeline() as p:
-                        current_function_result_status.rpc_result_expire_seconds = self.consumer_params.rpc_result_expire_seconds
-                        p.lpush(kw['body']['extra']['task_id'],
-                                Serialization.to_json_str(current_function_result_status.get_status_dict(without_datetime_obj=True)))
-                        p.expire(kw['body']['extra']['task_id'], self.consumer_params.rpc_result_expire_seconds)
-                        p.execute()
-
-                if (current_function_result_status.success is False and current_retry_times == max_retry_times) or current_function_result_status.success is True:
-                    await simple_run_in_executor(push_result)
-
-            # 异步执行不存在线程并发，不需要加锁。
-            self._execute_task_times_every_unit_time += 1
-            self._consuming_function_cost_time_total_every_unit_time += time.time() - t_start_run_fun
-            self._last_execute_task_time = time.time()
-            if time.time() - self._current_time_for_execute_task_times_every_unit_time > self._unit_time_for_count:
-                avarage_function_spend_time = round(self._consuming_function_cost_time_total_every_unit_time / self._execute_task_times_every_unit_time, 4)
-                msg = f'{self._unit_time_for_count} 秒内执行了 {self._execute_task_times_every_unit_time} 次函数 [ {self.consuming_function.__name__} ] ,' \
-                      f'函数平均运行耗时 {avarage_function_spend_time} 秒。 '
-                self.logger.info(msg)
-                if self._msg_num_in_broker != -1 and time.time() - self._last_show_remaining_execution_time > self._show_remaining_execution_time_interval:  # 有的中间件无法统计或没实现统计队列剩余数量的，统一返回的是-1，不显示这句话。
-                    # msg += f''' ，预计还需要 {time_util.seconds_to_hour_minute_second(self._msg_num_in_broker * avarage_function_spend_time / active_consumer_num)} 时间 才能执行完成 {self._msg_num_in_broker}个剩余的任务'''
-                    need_time = time_util.seconds_to_hour_minute_second(self._msg_num_in_broker / (self._execute_task_times_every_unit_time / self._unit_time_for_count) /
-                                                                        self._distributed_consumer_statistics.active_consumer_num)
-                    msg += f''' 预计还需要 {need_time} 时间 才能执行完成 队列 {self.queue_name} 中的 {self._msg_num_in_broker} 个剩余任务'''
-                    self.logger.info(msg)
-                    self._last_show_remaining_execution_time = time.time()
-                self._current_time_for_execute_task_times_every_unit_time = time.time()
-                self._consuming_function_cost_time_total_every_unit_time = 0
-                self._execute_task_times_every_unit_time = 0
-
-            self.user_custom_record_process_info_func(current_function_result_status)  # 两种方式都可以自定义,记录结果.建议使用文档4.21.b的方式继承来重写
-            await self.aio_user_custom_record_process_info_func(current_function_result_status)
-            if self.consumer_params.user_custom_record_process_info_func:
-                self.consumer_params.user_custom_record_process_info_func(current_function_result_status)
-
-        except BaseException as e:
-            log_msg = f' error 严重错误 {type(e)} {e} '
-            # self.logger.critical(msg=f'{log_msg} \n', exc_info=True)
-            # self.error_file_logger.critical(msg=f'{log_msg} \n', exc_info=True)
-            self.logger.critical(msg=log_msg, exc_info=True)
-        fct = funboost_current_task()
-        fct.set_fct_context(None)
 
     # noinspection PyProtectedMember
     async def _async_run_consuming_function_with_confirm_and_retry(self, kw: dict, current_retry_times,

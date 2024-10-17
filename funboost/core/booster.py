@@ -64,7 +64,11 @@ class Booster:
             return self
         else:
             return types.MethodType(self, instance)
+
     def __call__(self, *args, **kwargs) -> Booster:
+        """
+        这里在进行函数调用的时候会执行两次，第一次传入的是func参数，然后会把自己给返回过去，第二次在进行调用的时候，传入的是真正调用函数的参数，进入到else语句中
+        """
         # 这里是一个类的实例方法
         if len(kwargs) == 0 and len(args) == 1 and isinstance(args[0], typing.Callable):
             consuming_function = args[0]
@@ -98,7 +102,7 @@ class Booster:
             return self
         else:
             return self.consuming_function(*args, **kwargs)
-
+    # 这里得解决多进程下的kafka连接问题
     def _safe_push(self, *func_args, **func_kwargs) -> AsyncResult:
         """ 多进程安全的,在fork多进程(非spawn多进程)情况下,有的包多进程不能共用一个连接,例如kafka"""
         consumer = BoostersManager.get_or_create_booster_by_queue_name(self.queue_name).consumer
@@ -205,6 +209,7 @@ class BoostersManager:
         :return:
         """
         pid = os.getpid()
+        # 在进程内部创建booster对象
         key = (pid, queue_name)
         if key in cls.pid_queue_name__booster_map:
             return cls.pid_queue_name__booster_map[key]

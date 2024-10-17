@@ -1,16 +1,13 @@
 import asyncio
 import time
-
 import typing
-import json
 
-from funboost.utils.mongo_util import MongoMixin
-
-from funboost.concurrent_pool import CustomThreadPoolExecutor
 from funboost.concurrent_pool.flexible_thread_pool import FlexibleThreadPoolMinWorkers0
-from funboost.utils.redis_manager import RedisMixin
-from funboost.utils.redis_manager import AioRedisMixin
 from funboost.core.serialization import Serialization
+from funboost.utils.mongo_util import MongoMixin
+from funboost.utils.redis_manager import AioRedisMixin
+from funboost.utils.redis_manager import RedisMixin
+
 
 class HasNotAsyncResult(Exception):
     pass
@@ -20,13 +17,14 @@ NO_RESULT = 'no_result'
 
 
 class AsyncResult(RedisMixin):
-    default_callback_run_executor = FlexibleThreadPoolMinWorkers0(200,work_queue_maxsize=50)
+    default_callback_run_executor = FlexibleThreadPoolMinWorkers0(200, work_queue_maxsize=50)
 
     @property
     def callback_run_executor(self, ):
         return self._callback_run_executor or self.default_callback_run_executor
+
     @callback_run_executor.setter
-    def callback_run_executor(self,thread_pool_executor):
+    def callback_run_executor(self, thread_pool_executor):
         """
         用户可以 async_result.callback_run_executor = 你自己的线程池
         thread_pool_executor 用户可以传递 FlexibleThreadPool或者 ThreadPoolExecutorShrinkAble 或者官方的 concurrent.futures.ThreadPoolExecutor 类型的对象都可以，任意线程池只要实现了submit方法即可。
