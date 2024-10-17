@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 # @Author  : ydf
 # @Time    : 2022/8/8 0008 11:57
-from pathlib import Path
-
 import abc
+import atexit
 import copy
 import inspect
-import atexit
-import json
 import logging
 import multiprocessing
 import sys
@@ -15,25 +12,21 @@ import threading
 import time
 import typing
 from functools import wraps
+from pathlib import Path
 from threading import Lock
 
-
 import nb_log
+from nb_libs.path_helper import PathHelper
+
 from funboost.constant import ConstStrForClassMethod, FunctionKind
 from funboost.core.func_params_model import PublisherParams, PriorityConsumingControlConfig
 from funboost.core.helper_funs import MsgGenerater
-from funboost.core.loggers import develop_logger
-
-
-
-# from nb_log import LoggerLevelSetterMixin, LoggerMixin
-from funboost.core.loggers import LoggerLevelSetterMixin, FunboostFileLoggerMixin, get_logger
+from funboost.core.loggers import LoggerLevelSetterMixin, FunboostFileLoggerMixin
 from funboost.core.msg_result_getter import AsyncResult, AioAsyncResult
 from funboost.core.serialization import Serialization
 from funboost.core.task_id_logger import TaskIdLogger
+from funboost.funboost_config_deafult import FunboostCommonConfig
 from funboost.utils import decorators
-from funboost.funboost_config_deafult import BrokerConnConfig, FunboostCommonConfig
-from nb_libs.path_helper import PathHelper
 
 RedisAsyncResult = AsyncResult  # 别名
 RedisAioAsyncResult = AioAsyncResult  # 别名
@@ -151,6 +144,7 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         self._current_time = None
         self.count_per_minute = None
         self._init_count()
+        # 执行自定义的初始化逻辑
         self.custom_init()
         self.logger.info(f'{self.__class__} 被实例化了')
         self.publish_msg_num_total = 0
@@ -186,7 +180,10 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         return msg_dict['extra'].get('other_extra_params', {}).get(k, None)
 
     def _convert_msg(self, msg: typing.Union[str, dict], task_id=None,
-                     priority_control_config: PriorityConsumingControlConfig = None) -> (typing.Dict, typing.Dict, typing.Dict,str):
+                     priority_control_config: PriorityConsumingControlConfig = None) -> (typing.Dict, typing.Dict, typing.Dict, str):
+        """
+        这里返回的msg，包括了原有的extra字段和priority_control_config中包括的字段，msg_function_kw不包括extra，extra_params原有的加上priority_control_config中的
+        """
         msg = Serialization.to_dict(msg)
         msg_function_kw = copy.deepcopy(msg)
         raw_extra = {}
@@ -212,13 +209,17 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         :param priority_control_config:优先级配置，消息可以携带优先级配置，覆盖boost的配置。
         :return:
         """
+        # msg是用户传入的参数
         msg = copy.deepcopy(msg)  # 字典是可变对象,不要改变影响用户自身的传参字典. 用户可能继续使用这个传参字典.
         msg, msg_function_kw, extra_params, task_id = self._convert_msg(msg, task_id, priority_control_config)
         t_start = time.time()
+        # 这里调用具体实现类的publish方法，这里交由concrete_realization_of_publish去发送，发送的是json字符串
+        # 这里要是阻塞会怎么办
         decorators.handle_exception(retry_times=10, is_throw_error=True, time_sleep=0.1)(
             self.concrete_realization_of_publish)(Serialization.to_json_str(msg))
 
         self.logger.debug(f'向{self._queue_name} 队列，推送消息 耗时{round(time.time() - t_start, 4)}秒  {msg_function_kw}', extra={'task_id': task_id})  # 显示msg太长了。
+        # 推送消息计数
         with self._lock_for_count:
             self.count_per_minute += 1
             self.publish_msg_num_total += 1
@@ -226,6 +227,7 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
                 self.logger.info(
                     f'10秒内推送了 {self.count_per_minute} 条消息,累计推送了 {self.publish_msg_num_total} 条消息到 {self._queue_name} 队列中')
                 self._init_count()
+        # 返回对应的异步结果
         return AsyncResult(task_id)
 
     def send_msg(self, msg: typing.Union[dict, str]):
@@ -344,8 +346,8 @@ def deco_mq_conn_error(f):
             except Exception as e:
                 import amqpstorm
                 from pikav1.exceptions import AMQPError as PikaAMQPError
-                if isinstance(e,(PikaAMQPError, amqpstorm.AMQPError)):
-                # except (PikaAMQPError, amqpstorm.AMQPError,) as e:  # except BaseException as e:   # 现在装饰器用到了绝大多出地方，单个异常类型不行。ex
+                if isinstance(e, (PikaAMQPError, amqpstorm.AMQPError)):
+                    # except (PikaAMQPError, amqpstorm.AMQPError,) as e:  # except BaseException as e:   # 现在装饰器用到了绝大多出地方，单个异常类型不行。ex
                     self.logger.error(f'中间件链接出错   ,方法 {f.__name__}  出错 ，{e}')
                     self.init_broker()
                     return f(self, *args, **kwargs)

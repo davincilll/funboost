@@ -9,9 +9,9 @@ from funboost.core.func_params_model import PublisherParams
 
 
 # broker_kind__publisher_type_map
-
 def get_publisher(publisher_params: PublisherParams) -> AbstractPublisher:
     """
+    通过配置参数获取对应的publisher
     :param queue_name:
     :param log_level_int:
     :param logger_prefix:

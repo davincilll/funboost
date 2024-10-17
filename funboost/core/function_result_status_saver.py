@@ -103,6 +103,9 @@ class FunctionResultStatus():
 
 
 class ResultPersistenceHelper(MongoMixin, FunboostFileLoggerMixin):
+    """
+    用于持久化结果使用的
+    """
     TASK_STATUS_DB = 'task_status'
 
     def __init__(self, function_result_status_persistance_conf: FunctionResultStatusPersistanceConfig, queue_name):

@@ -7,75 +7,61 @@
 
 框架做主要的功能都是在这个文件里面实现的.
 """
-import functools
-import sys
-import typing
 import abc
+import asyncio
+import atexit
 import copy
-from pathlib import Path
 # from multiprocessing import Process
 import datetime
-# noinspection PyUnresolvedReferences,PyPackageRequirements
-import pytz
-import json
+import inspect
 import logging
-import atexit
 import os
-import uuid
+import threading
 import time
 import traceback
-import inspect
+import typing
+import uuid
 from functools import wraps
-import threading
+from pathlib import Path
 from threading import Lock
-import asyncio
 
 import nb_log
-from funboost.core.current_task import funboost_current_task, FctContext
-from funboost.core.loggers import develop_logger
-
-from funboost.core.func_params_model import BoosterParams, PublisherParams, BaseJsonAbleModel
-from funboost.core.serialization import Serialization
-from funboost.core.task_id_logger import TaskIdLogger
-from funboost.constant import FunctionKind
-
+# noinspection PyUnresolvedReferences,PyPackageRequirements
+import pytz
+from apscheduler.executors.pool import ThreadPoolExecutor as ApschedulerThreadPoolExecutor
+from apscheduler.jobstores.redis import RedisJobStore
+from func_timeout import func_set_timeout  # noqa
 from nb_libs.path_helper import PathHelper
 from nb_log import (get_logger, LoggerLevelSetterMixin, LogManager, is_main_process,
                     nb_log_config_default)
-from funboost.core.loggers import FunboostFileLoggerMixin, logger_prompt
-
-from apscheduler.jobstores.redis import RedisJobStore
-
-from apscheduler.executors.pool import ThreadPoolExecutor as ApschedulerThreadPoolExecutor
-
-from funboost.funboost_config_deafult import FunboostCommonConfig
-from funboost.concurrent_pool.single_thread_executor import SoloExecutor
-
-from funboost.core.function_result_status_saver import ResultPersistenceHelper, FunctionResultStatus, RunStatus
-
-from funboost.core.helper_funs import delete_keys_and_return_new_dict, get_publish_time, MsgGenerater
 
 from funboost.concurrent_pool.async_helper import simple_run_in_executor
 from funboost.concurrent_pool.async_pool_executor import AsyncPoolExecutor
 # noinspection PyUnresolvedReferences
 from funboost.concurrent_pool.bounded_threadpoolexcutor import \
     BoundedThreadPoolExecutor
-from funboost.utils.redis_manager import RedisMixin
-from func_timeout import func_set_timeout  # noqa
-
 from funboost.concurrent_pool.custom_threadpool_executor import check_not_monkey
 from funboost.concurrent_pool.flexible_thread_pool import FlexibleThreadPool, sync_or_async_fun_deco
+from funboost.concurrent_pool.single_thread_executor import SoloExecutor
+from funboost.constant import ConcurrentModeEnum, BrokerEnum, ConstStrForClassMethod
+from funboost.constant import FunctionKind
 # from funboost.concurrent_pool.concurrent_pool_with_multi_process import ConcurrentPoolWithProcess
 from funboost.consumers.redis_filter import RedisFilter, RedisImpermanencyFilter
-from funboost.factories.publisher_factotry import get_publisher
-
-from funboost.utils import decorators, time_util, redis_manager
-from funboost.constant import ConcurrentModeEnum, BrokerEnum, ConstStrForClassMethod
 from funboost.core import kill_remote_task
+from funboost.core.current_task import funboost_current_task, FctContext
 from funboost.core.exceptions import ExceptionForRequeue, ExceptionForPushToDlxqueue
-
+from funboost.core.func_params_model import BoosterParams, PublisherParams, BaseJsonAbleModel
+from funboost.core.function_result_status_saver import ResultPersistenceHelper, FunctionResultStatus, RunStatus
+from funboost.core.helper_funs import delete_keys_and_return_new_dict, get_publish_time, MsgGenerater
 # from funboost.core.booster import BoostersManager  互相导入
 from funboost.core.lazy_impoter import funboost_lazy_impoter
+from funboost.core.loggers import FunboostFileLoggerMixin
+from funboost.core.serialization import Serialization
+from funboost.core.task_id_logger import TaskIdLogger
+from funboost.factories.publisher_factotry import get_publisher
+from funboost.funboost_config_deafult import FunboostCommonConfig
+from funboost.utils import decorators, time_util, redis_manager
+from funboost.utils.redis_manager import RedisMixin
 
 
 # patch_apscheduler_run_job()
@@ -144,8 +130,7 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         self._msg_schedule_time_intercal = 0 if consumer_params.qps in (None, 0) else 1.0 / consumer_params.qps
 
         self._concurrent_mode_dispatcher = ConcurrentModeDispatcher(self)
-        if consumer_params.concurrent_mode == ConcurrentModeEnum.ASYNC:
-            self._run = self._async_run  # 这里做了自动转化，使用async_run代替run
+        # 这里把异步的逻辑进行删除了
         self.logger: logging.Logger
         self._build_logger()
 
@@ -248,6 +233,7 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
                 self.logger.warning(f'当前消息队列中间件含有不支持的特殊配置 {self.consumer_params.broker_exclusive_config.keys()}，能支持的特殊独有配置包括 {broker_exclusive_config_keys}')
 
     def _check_monkey_patch(self):
+        """检测猴子补丁相关问题"""
         if self.consumer_params.concurrent_mode == ConcurrentModeEnum.GEVENT:
             from funboost.concurrent_pool.custom_gevent_pool_executor import check_gevent_monkey_patch
             check_gevent_monkey_patch()
@@ -281,10 +267,12 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
 
                 # noinspection PyBroadException
                 def ___keep_circulating():
+                    # 进行循环运行
                     while 1:
                         if self._stop_flag == 1:
                             break
                         try:
+
                             result = func(*args, **kwargs)
                             if exit_if_function_run_sucsess:
                                 return result
@@ -299,8 +287,10 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
                             # print(func,time_sleep)
 
                 if block:
+                    # 进行阻塞的方式运行
                     return ___keep_circulating()
                 else:
+                    # 启动一个线程去运行
                     threading.Thread(target=___keep_circulating, daemon=daemon).start()
 
             return __keep_circulating
@@ -309,14 +299,20 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
 
     # noinspection PyAttributeOutsideInit
     def start_consuming_message(self):
+        """
+        真正的启动消费的入口方法
+        """
         # ConsumersManager.show_all_consumer_info()
         # noinspection PyBroadException
         pid_queue_name_tuple = (os.getpid(), self.queue_name)
+        # 这里用来标识当前进程时候已经有了一个该队列的消费者
         if pid_queue_name_tuple in funboost_lazy_impoter.BoostersManager.pid_queue_name__has_start_consume_set:
             self.logger.warning(f'{pid_queue_name_tuple} 已启动消费,不要一直去启动消费,funboost框架自动阻止.')  # 有的人乱写代码,无数次在函数内部或for循环里面执行 f.consume(),一个队列只需要启动一次消费,不然每启动一次性能消耗很大,直到程序崩溃
             return
         else:
+            # 增加一个该队列的消费者
             funboost_lazy_impoter.BoostersManager.pid_queue_name__has_start_consume_set.add(pid_queue_name_tuple)
+        # 类变量表明已经有了消费者了
         GlobalVars.has_start_a_consumer_flag = True
         try:
             self._concurrent_mode_dispatcher.check_all_concurrent_mode()
@@ -334,16 +330,22 @@ class AbstractConsumer(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
 
         self.keep_circulating(60, block=False, daemon=False)(self.check_heartbeat_and_message_count)()  # 间隔时间最好比self._unit_time_for_count小整数倍，不然日志不准。
         if self.consumer_params.is_support_remote_kill_task:
+            # 用于远程启停
             kill_remote_task.RemoteTaskKiller(self.queue_name, None).start_cycle_kill_task()
             self.consumer_params.is_show_message_get_from_broker = True  # 方便用户看到从消息队列取出来的消息的task_id,然后使用task_id杀死运行中的消息。
+        # 是否启用消费过滤功能
         if self.consumer_params.do_task_filtering:
             self._redis_filter.delete_expire_filter_task_cycle()  # 这个默认是RedisFilter类，是个pass不运行。所以用别的消息中间件模式，不需要安装和配置redis。
+        # 真正的运行
         if self.consumer_params.schedule_tasks_on_main_thread:
             self.keep_circulating(1, daemon=False)(self._shedual_task)()
         else:
             self._concurrent_mode_dispatcher.schedulal_task_with_no_block()
 
     def _start_delay_task_scheduler(self):
+        """
+        进行延时消费
+        """
         from funboost.timing_job import FsdfBackgroundScheduler
         jobstores = {
             "default": RedisJobStore(**redis_manager.get_redis_conn_kwargs())
@@ -926,7 +928,6 @@ class ConcurrentModeDispatcher(FunboostFileLoggerMixin):
         self._concurrent_mode = self.consumer.consumer_params.concurrent_mode
         self.timeout_deco = None
         if self._concurrent_mode in (ConcurrentModeEnum.THREADING, ConcurrentModeEnum.SINGLE_THREAD):
-            # self.timeout_deco = decorators.timeout
             self.timeout_deco = func_set_timeout  # 这个超时装饰器性能好很多。
         elif self._concurrent_mode == ConcurrentModeEnum.GEVENT:
             from funboost.concurrent_pool.custom_gevent_pool_executor import gevent_timeout_deco
@@ -934,9 +935,11 @@ class ConcurrentModeDispatcher(FunboostFileLoggerMixin):
         elif self._concurrent_mode == ConcurrentModeEnum.EVENTLET:
             from funboost.concurrent_pool.custom_evenlet_pool_executor import evenlet_timeout_deco
             self.timeout_deco = evenlet_timeout_deco
-        # self.logger.info(f'{self.consumer} 设置并发模式 {self.consumer.consumer_params.concurrent_mode}')
 
     def check_all_concurrent_mode(self):
+        """
+        检测所有的并发模式，保证当前解释器内的所有消费者的并发模式只有一种
+        """
         if GlobalVars.global_concurrent_mode is not None and \
                 self.consumer.consumer_params.concurrent_mode != GlobalVars.global_concurrent_mode:
             # print({self.consumer._concurrent_mode, ConsumersManager.global_concurrent_mode})
@@ -1025,6 +1028,9 @@ def wait_for_possible_has_finish_all_tasks_by_conusmer_list(consumer_list: typin
 
 class DistributedConsumerStatistics(RedisMixin, FunboostFileLoggerMixin):
     """
+    获取分布式中的状态的，分布式控频率，远程启停
+    """
+    """
     为了兼容模拟mq的中间件（例如redis，他没有实现amqp协议，redis的list结构和真mq差远了），获取一个队列有几个连接活跃消费者数量。
     分布式环境中的消费者统计。主要目的有3点
 
@@ -1042,7 +1048,6 @@ class DistributedConsumerStatistics(RedisMixin, FunboostFileLoggerMixin):
 
     if HEARBEAT_EXPIRE_SECOND < SEND_HEARTBEAT_INTERVAL * 2:
         raise ValueError(f'HEARBEAT_EXPIRE_SECOND:{HEARBEAT_EXPIRE_SECOND} , SEND_HEARTBEAT_INTERVAL:{SEND_HEARTBEAT_INTERVAL} ')
-
 
     def __init__(self, consumer: AbstractConsumer):
         # self._consumer_identification = consumer_identification
@@ -1097,7 +1102,6 @@ class DistributedConsumerStatistics(RedisMixin, FunboostFileLoggerMixin):
         self._show_active_consumer_num()
         self._get_stop_and_pause_flag_from_redis()
 
-
     def _show_active_consumer_num(self):
         self.active_consumer_num = self.redis_db_frame.scard(self._redis_key_name) or 1
         if time.time() - self._last_show_consumer_num_timestamp > self.SHOW_CONSUMER_NUM_INTERVAL:
@@ -1112,6 +1116,9 @@ class DistributedConsumerStatistics(RedisMixin, FunboostFileLoggerMixin):
 
     # noinspection PyProtectedMember
     def _get_stop_and_pause_flag_from_redis(self):
+        """
+        这里获取到了停止信号就会进行停止，不过会顶到正在运行的运行完之后才停止
+        """
         stop_flag = self.redis_db_frame.get(self._consumer._redis_key_stop_flag)
         if stop_flag is not None and int(stop_flag) == 1:
             self._consumer._stop_flag = 1

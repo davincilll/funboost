@@ -43,6 +43,7 @@ class PersistQueuePublisher(AbstractPublisher):
 
     def concrete_realization_of_publish(self, msg):
         # noinspection PyTypeChecker
+        # 这里就直接把msg放进去了吗？？？？？？？？？？？
         self.queue.put(msg)
 
     def clear(self):

@@ -11,6 +11,9 @@ from funboost.core.lazy_impoter import funboost_lazy_impoter
 
 
 def _run_consumer_in_new_process(queue_name, ):
+    """
+    在消费者中使用新进程
+    """
     booster_current_pid = funboost_lazy_impoter.BoostersManager.get_or_create_booster_by_queue_name(queue_name)
     # booster_current_pid = boost(**boost_params)(consuming_function)
     booster_current_pid.consume()
@@ -39,13 +42,10 @@ def run_consumer_with_multi_process(booster: Booster, process_num=1):
     '''
     if not isinstance(booster, Booster):
         raise ValueError(f'{booster} 参数必须是一个被 boost 装饰的函数')
-    if process_num == 1 and False:
-        booster.consume()
-    else:
-        for i in range(process_num):
-            # print(i)
-            Process(target=_run_consumer_in_new_process,
-                    args=(booster.queue_name,)).start()
+    for i in range(process_num):
+        # print(i)
+        Process(target=_run_consumer_in_new_process,
+                args=(booster.queue_name,)).start()
 
 
 def _multi_process_pub_params_list_in_new_process(queue_name, msgs: List[dict]):
