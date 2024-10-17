@@ -5,8 +5,8 @@ import types
 import typing
 from functools import wraps
 
-from FunScheduler.core.utils.module_loading import import_string
-from FunScheduler.settings import settings
+from fun_scheduler.core.utils.module_loading import import_string
+from fun_scheduler.settings import settings
 from funboost.concurrent_pool.async_helper import simple_run_in_executor
 from funboost.core.func_params_model import BoosterParams, PriorityConsumingControlConfig
 from funboost.core.loggers import flogger, logger_prompt
@@ -16,16 +16,7 @@ from funboost.utils.class_utils import ClsHelper
 from funboost.utils.ctrl_c_end import ctrl_c_recv
 
 
-# 将scheduler做成一个池类复用
-class BoostParams:
-    queue_name: str
-    max_retry_times: int
-    msg_expire_seconds: typing.Union[float, int]
-    def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None):
-        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
-        # 进行初始化
-
-
+# 将scheduler做成一个池类复用，用队列就可以了
 
 
 
@@ -42,21 +33,15 @@ class Scheduler:
 
     def check_booster_params(self, params: BoostParams):
         # 检测运行参数是否和broker匹配
-
-
-
-
-
-
-    def add_job(self, func: typing.Callable,booster_params:BoostParams):
         pass
 
+    def add_job(self, func: typing.Callable, booster_params: BoostParams):
+        pass
 
     def start(self):
         """
         自动根据
         """
-
 
 
 class Booster:

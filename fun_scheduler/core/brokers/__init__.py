@@ -1,6 +1,6 @@
 import abc
 
-from FunScheduler.settings import settings
+from fun_scheduler.settings import settings
 
 
 class BaseBroker():

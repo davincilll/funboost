@@ -1,7 +1,7 @@
 import redis5
 
-from FunScheduler.core.brokers import BaseBroker
-from FunScheduler.settings import settings
+from fun_scheduler.core.brokers import BaseBroker
+from fun_scheduler.settings import settings
 
 
 class RedisBroker(BaseBroker):

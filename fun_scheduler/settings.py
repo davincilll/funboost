@@ -1,6 +1,6 @@
 import importlib
 
-from FunScheduler.enums import SchedulerConcurrentModeEnum
+from fun_scheduler.core.enums import SchedulerConcurrentModeEnum
 
 DEFAULTS = {
     "LOGGER": {

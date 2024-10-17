@@ -1,9 +1,7 @@
-from enum import Enum
-
-from FunScheduler.enums import SchedulerConcurrentModeEnum
+from fun_scheduler.core.enums import SchedulerConcurrentModeEnum
 
 """
-FunScheduler 是一个中心化的定时任务框架，相较于funboost的完全分布式框架，将职责进行了分离，分离出了scheduler、publisher、consumer三个核心组件，
+fun_scheduler 是一个中心化的定时任务框架，相较于funboost的完全分布式框架，将职责进行了分离，分离出了scheduler、publisher、consumer三个核心组件，
 scheduler负责调度任务，publisher负责发布任务，consumer负责消费任务。
 相较于funboost的每个函数一个booster（内部包括消费者和生产者）？？？,使用装饰器将函数注册为booster，每一个都要单独去启动发布和消费
 FunScheduler在每一个进程维护一个Scheduler，用于控制整个框架的调度，对于任意函数的调度，需要将函数对象，以及函数的参数传递给全局单例的Scheduler，
