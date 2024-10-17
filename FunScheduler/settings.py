@@ -109,11 +109,13 @@ class Settings:
         # Cache the result
         return val
 
-    def _is_import_path(self, name):
+    @staticmethod
+    def _is_import_path(name):
         """Check if the setting name indicates a valid import path."""
         return name == 'BACKEND' or name.endswith('CLASS')
 
-    def _perform_import(self, val):
+    @staticmethod
+    def _perform_import(val):
         """Import a class or module from a string path."""
         module_path, class_name = val.rsplit('.', 1)
         module = importlib.import_module(module_path)
@@ -125,6 +127,7 @@ class Settings:
 
     def __repr__(self):
         return f"<Settings: {self._settings}>"
+
 
 settings = Settings(DEFAULTS)
 
