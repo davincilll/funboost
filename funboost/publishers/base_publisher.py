@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
 # @Author  : ydf
 # @Time    : 2022/8/8 0008 11:57
-from pathlib import Path
-
 import abc
+import atexit
 import copy
 import inspect
-import atexit
-import json
 import logging
 import multiprocessing
 import sys
@@ -15,25 +12,22 @@ import threading
 import time
 import typing
 from functools import wraps
+from pathlib import Path
 from threading import Lock
 
-
 import nb_log
+from nb_libs.path_helper import PathHelper
+
 from funboost.constant import ConstStrForClassMethod, FunctionKind
 from funboost.core.func_params_model import PublisherParams, PriorityConsumingControlConfig
 from funboost.core.helper_funs import MsgGenerater
-from funboost.core.loggers import develop_logger
-
-
-
 # from nb_log import LoggerLevelSetterMixin, LoggerMixin
-from funboost.core.loggers import LoggerLevelSetterMixin, FunboostFileLoggerMixin, get_logger
+from funboost.core.loggers import LoggerLevelSetterMixin, FunboostFileLoggerMixin
 from funboost.core.msg_result_getter import AsyncResult, AioAsyncResult
 from funboost.core.serialization import Serialization
 from funboost.core.task_id_logger import TaskIdLogger
+from funboost.funboost_config_deafult import FunboostCommonConfig
 from funboost.utils import decorators
-from funboost.funboost_config_deafult import BrokerConnConfig, FunboostCommonConfig
-from nb_libs.path_helper import PathHelper
 
 RedisAsyncResult = AsyncResult  # 别名
 RedisAioAsyncResult = AioAsyncResult  # 别名
@@ -112,6 +106,7 @@ class PublishParamsChecker(FunboostFileLoggerMixin):
     def __init__(self, func: typing.Callable):
         # print(func)
         spec = inspect.getfullargspec(func)
+        # 这个是什么作用
         self.all_arg_name = spec.args
         self.all_arg_name_set = set(spec.args)
         # print(spec.args)
@@ -127,7 +122,7 @@ class PublishParamsChecker(FunboostFileLoggerMixin):
             self.keyword_arg_name_list = []
             self.keyword_arg_name_set = set()
         self.logger.debug(f'{func} 函数的入参要求是 全字段 {self.all_arg_name_set} ,必须字段为 {self.position_arg_name_set} ')
-
+        # 最终获取到了所有的参数名，以及所有的位置参数名
     def check_params(self, publish_params: dict):
         publish_params_keys_set = set(publish_params.keys())
         if publish_params_keys_set.issubset(self.all_arg_name_set) and publish_params_keys_set.issuperset(
@@ -186,13 +181,14 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         return msg_dict['extra'].get('other_extra_params', {}).get(k, None)
 
     def _convert_msg(self, msg: typing.Union[str, dict], task_id=None,
-                     priority_control_config: PriorityConsumingControlConfig = None) -> (typing.Dict, typing.Dict, typing.Dict,str):
+                     priority_control_config: PriorityConsumingControlConfig = None) -> (typing.Dict, typing.Dict, typing.Dict, str):
         msg = Serialization.to_dict(msg)
         msg_function_kw = copy.deepcopy(msg)
         raw_extra = {}
         if 'extra' in msg:
             msg_function_kw.pop('extra')
             raw_extra = msg['extra']
+            # 参数检查功能
         if self.publish_params_checker and self.publisher_params.should_check_publish_func_params:
             self.publish_params_checker.check_params(msg_function_kw)
         task_id = task_id or MsgGenerater.generate_task_id(self._queue_name)
@@ -279,6 +275,7 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
             cls = type(obj)
             if not hasattr(obj, ConstStrForClassMethod.OBJ_INIT_PARAMS):
                 raise ValueError(f'消费函数 {self.publisher_params.consuming_function} 是实例方法，实例必须有 {ConstStrForClassMethod.OBJ_INIT_PARAMS} 属性')
+            # 将函数参数的第一个原本的self改为ConstStrForClassMethod中的属性，附加上OBJ_INIT_PARAMS属性
             func_args_list[0] = {ConstStrForClassMethod.FIRST_PARAM_NAME: self.publish_params_checker.all_arg_name[0],
                                  ConstStrForClassMethod.CLS_NAME: cls.__name__,
                                  ConstStrForClassMethod.CLS_FILE: self.__get_cls_file(cls),
@@ -286,13 +283,14 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
                                  ConstStrForClassMethod.OBJ_INIT_PARAMS: getattr(obj, ConstStrForClassMethod.OBJ_INIT_PARAMS),
 
                                  }
-
+        # 更新msg_dict中的
         for index, arg in enumerate(func_args_list):
             # print(index,arg,self.publish_params_checker.position_arg_name_list)
             # msg_dict[self.publish_params_checker.position_arg_name_list[index]] = arg
             msg_dict[self.publish_params_checker.all_arg_name[index]] = arg
 
         # print(msg_dict)
+        # 这里会更新msg_dict中的内容为函数的入参，self参数会因为前面做的func_args_list[0]进行修改
         return self.publish(msg_dict)
 
     delay = push  # 那就来个别名吧，两者都可以。
@@ -344,8 +342,8 @@ def deco_mq_conn_error(f):
             except Exception as e:
                 import amqpstorm
                 from pikav1.exceptions import AMQPError as PikaAMQPError
-                if isinstance(e,(PikaAMQPError, amqpstorm.AMQPError)):
-                # except (PikaAMQPError, amqpstorm.AMQPError,) as e:  # except BaseException as e:   # 现在装饰器用到了绝大多出地方，单个异常类型不行。ex
+                if isinstance(e, (PikaAMQPError, amqpstorm.AMQPError)):
+                    # except (PikaAMQPError, amqpstorm.AMQPError,) as e:  # except BaseException as e:   # 现在装饰器用到了绝大多出地方，单个异常类型不行。ex
                     self.logger.error(f'中间件链接出错   ,方法 {f.__name__}  出错 ，{e}')
                     self.init_broker()
                     return f(self, *args, **kwargs)
