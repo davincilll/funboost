@@ -1,4 +1,5 @@
 import inspect
+import json
 import typing
 from enum import Enum
 from functools import wraps
@@ -12,7 +13,8 @@ class FuncTypeEnum(Enum):
 
 
 class FuncInfo:
-    def __init__(self, func_path: str, func_name: str, func_type: FuncTypeEnum, args_count: int, default_kwargs: dict = {}, ):
+    def __init__(self, func_path: str, func_name: str, func_type: FuncTypeEnum, args_count: int,
+                 default_kwargs: dict = {}, ):
         self.func_path = func_path
         self.func_name = func_name
         self.func_type = func_type
@@ -29,7 +31,8 @@ class BoostParams:
     为装饰的函数自动注册 BoostParams 参数和 FuncInfo 信息
     """
 
-    def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None, obj_init_params=None):
+    def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None,
+                 obj_init_params=None):
         self.queue_name = queue_name
         self.max_retry_times = max_retry_times
         self.msg_expire_seconds = msg_expire_seconds
@@ -81,7 +84,8 @@ class BoostParams:
     def _get_default_kwargs(func):
         """ 获取函数可接受的参数信息 """
         signature = inspect.signature(func)
-        default_kwargs = {param.name: param.default for param in signature.parameters.values() if param.default is not param.empty}
+        default_kwargs = {param.name: param.default for param in signature.parameters.values() if
+                          param.default is not param.empty}
         return default_kwargs
 
     @staticmethod
@@ -90,20 +94,43 @@ class BoostParams:
         signature = inspect.signature(func)
         return len(signature.parameters)
 
+
 class PublishParams:
     """
     看看是如何实现分布式场景下精准实现控频的，以及是如何实现延迟消费的，以及是如何实现定时消费的
     """
 
 
-class TaskMsg:
+class TaskInfo:
     """
     用于在消息队列中存储任务信息的
     """
     task_id = None
     boost_params: BoostParams = None
-    func_kwargs: dict = None # 函数的运行参数
+    func_kwargs: dict = None  # 函数的运行参数
 
+    # todo:完成序列化方法
+    def to_json(self):
+        """将实例属性序列化为 JSON 字符串"""
+        data = self.__dict__.copy()  # 复制实例字典
+        if isinstance(self.boost_params, BoostParams):
+            data['boost_params'] = self.boost_params.to_dict()  # 转换为字典
+        return json.dumps(data)
+
+    @staticmethod
+    def from_json(s: str):
+        """从 JSON 字符串反序列化为 TaskInfo 实例"""
+        data = json.loads(s)
+        if 'boost_params' in data:
+            data['boost_params'] = BoostParams.from_dict(data['boost_params'])  # 转换回 BoostParams 对象
+        return TaskInfo(**data)
+
+    def to_dict(self):
+        return self.__dict__
+
+    @staticmethod
+    def from_dict(d: dict):
+        return TaskInfo(**d)
 
 
 # 使用示例
