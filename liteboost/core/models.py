@@ -90,6 +90,21 @@ class BoostParams:
         signature = inspect.signature(func)
         return len(signature.parameters)
 
+class PublishParams:
+    """
+    看看是如何实现分布式场景下精准实现控频的，以及是如何实现延迟消费的，以及是如何实现定时消费的
+    """
+
+
+class TaskMsg:
+    """
+    用于在消息队列中存储任务信息的
+    """
+    task_id = None
+    boost_params: BoostParams = None
+    func_kwargs: dict = None # 函数的运行参数
+
+
 
 # 使用示例
 if __name__ == '__main__':

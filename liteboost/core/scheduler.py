@@ -29,6 +29,7 @@ class Scheduler:
     这里需要保证后续变更中函数的位置不变，
     改为基于注解的全局扫描自动发现和注册，不过还是需要自己手动启动Scheduler去完成这个过程
     todo：支持使用注解的方式在函数上进行标注，add_job 的时候自动读取该参数
+    scheduler只负责启动发布和消费
     """
 
     def __init__(self):
@@ -51,7 +52,7 @@ class Scheduler:
         自动发现完成队列与函数信息的注册，供start_queue中使用
         """
 
-    def add_job(self, func: typing.Callable, booster_params: BoostParams):
+    def add_task(self, func: typing.Callable, booster_params: BoostParams):
         """
         调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """
@@ -69,15 +70,44 @@ class Scheduler:
 
     def start_queues(self, queue_name_list: typing.List[str] = None):
         """
-        启动当前节点对指定的队列消费
+        启动当前节点对指定的队列消费,不传入时则为对所有队列的消费
         """
         pass
 
-    def run_monitor(self):
+
+class TaskMonitor:
+    """
+    完成对任务的监控，包括对任务的启停等等，使用命令转换工具进行转换
+    """
+
+    def clean_tasks(self, queue_name_list: typing.List[str] = None):
         """
-        启动当前节点对所有分布式集群的监控
+        清除在所有队列中尚未运行的tasks,可选的接受需要清除的队列的列表
         """
         pass
+
+    def get_tasks(self, queue_name_list: typing.List[str] = None):
+        """
+        获取所有的tasks的信息，可选的接受需要查看的队列的列表
+        """
+        pass
+
+    def get_task(self, task_id: str):
+        """
+        获取某个task的信息
+        """
+        pass
+
+    def kill_task(self, task_id: str):
+        """
+        不一定能够支持
+        """
+
+    def get_task_result_by_block(self, task_id: str):
+        """
+        以阻塞的方式获取某个task的结果，如果任务没有执行完成会进行阻塞直至获取到对应的结果，
+        需要开启rpc支持
+        """
 
 
 class Booster:
