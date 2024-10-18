@@ -14,7 +14,9 @@ class FuncTypeEnum(Enum):
 
 class FuncInfo:
     def __init__(self, func_path: str, func_name: str, func_type: FuncTypeEnum, args_count: int,
-                 default_kwargs: dict = {}, ):
+                 default_kwargs=None, ):
+        if default_kwargs is None:
+            default_kwargs = {}
         self.func_path = func_path
         self.func_name = func_name
         self.func_type = func_type
@@ -32,11 +34,15 @@ class BoostParams:
     """
 
     def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None,
-                 obj_init_params=None):
+                 obj_init_params=None, broker_group: str = "default", persistence_handler_group: str = "default"):
         self.queue_name = queue_name
         self.max_retry_times = max_retry_times
         self.msg_expire_seconds = msg_expire_seconds
         self.obj_init_params = obj_init_params
+        # 默认选择的broker组,通过这个可以根据参数动态的加载该队列使用什么broker作为中间件,默认为default
+        self.broker_group = broker_group
+        # 默认选择的持久化组，通过这个参数动态的加载该队列使用什么数据库作为持久化存储,默认为default
+        self.persistence_handler_group = persistence_handler_group
 
     def __repr__(self):
         return (f"BoostParams(queue_name={self.queue_name}, "
@@ -106,6 +112,7 @@ class TaskInfo:
     用于在消息队列中存储任务信息的
     """
     task_id = None
+    # todo:后续为了控制消息大小，将BoostParams中值得传递的消息提炼出来放到另外一个模型中进行传递
     boost_params: BoostParams = None
     func_kwargs: dict = None  # 函数的运行参数
 

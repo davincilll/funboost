@@ -31,6 +31,8 @@ class Scheduler:
     todo：支持使用注解的方式在函数上进行标注，add_job 的时候自动读取该参数
     scheduler只负责启动发布和消费
     """
+    # 用queue_name 作为键名，存储scheduler,用于支持用户自定义的broker和persistence_handler
+    _instance = {}
 
     def __init__(self):
         self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
@@ -39,6 +41,8 @@ class Scheduler:
         self.concurrent_params = settings.SCHEDULER["CONCURRENT_PARAMS"]
         self.logger = None
         self.broker = import_string(settings.BROKER["BACKEND"])
+        # 持久化处理器
+        self.persistence_handler = import_string(settings.PERSISTENCE["BACKEND"])
         # 默认启动参数
         self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
 
@@ -56,6 +60,7 @@ class Scheduler:
         """
         调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """
+
         pass
 
     def start_queue(self, queue_name: str):
@@ -140,7 +145,8 @@ class Booster:
             #         self.boost_params.consuming_function_class_module = consuming_function.__module__
             #     if self.boost_params.consuming_function_class_name is None:
             #         self.boost_params.consuming_function_class_name = consuming_function.__qualname__.split('.')[0]
-            logger_prompt.debug(f''' {self.boost_params.queue_name} booster 配置是 {self.boost_params.json_str_value()}''')
+            logger_prompt.debug(
+                f''' {self.boost_params.queue_name} booster 配置是 {self.boost_params.json_str_value()}''')
             self.consuming_function = consuming_function
             self.is_decorated_as_consume_function = True
 
@@ -176,7 +182,8 @@ class Booster:
                       priority_control_config: PriorityConsumingControlConfig = None) -> AsyncResult:
         """ 多进程安全的,在fork多进程(非spawn多进程)情况下,很多包跨线程/进程不能共享中间件连接,"""
         consumer = BoostersManager.get_or_create_booster_by_queue_name(self.queue_name).consumer
-        return consumer.publisher_of_same_queue.publish(msg=msg, task_id=task_id, priority_control_config=priority_control_config)
+        return consumer.publisher_of_same_queue.publish(msg=msg, task_id=task_id,
+                                                        priority_control_config=priority_control_config)
 
     async def aio_push(self, *func_args, **func_kwargs) -> AioAsyncResult:
         """asyncio 生态下发布消息,因为同步push只需要消耗不到1毫秒,所以基本上大概可以直接在asyncio异步生态中直接调用同步的push方法,

@@ -9,18 +9,26 @@ DEFAULTS = {
         "LOG_FILE_PATH": "",  # 日志文件路径
     },
     'BROKER': {
-        # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
-        "BACKEND": "funboost.factories.consumer_factory.get_consumer",
-        "LOCATION": "redis5://:J8689588@175.178.235.132:6379/0",
-        "OPTIONS": {
-        },
+        "default": {
+            # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
+            "BACKEND": "funboost.factories.consumer_factory.get_consumer",
+            "PUBLISHER_CLASS": "funboost.factories.publisher_factory.get_publisher",
+            "CONSUMER_CLASS": "funboost.factories.consumer_factory.get_consumer",
+            # 监控类，完成对所有当前存在的任务的捕获，以及心跳上报，获取所有的任务，任务启停，对任务中间状态的干涉等等。
+            "MONITOR_CLASS": "funboost.factories.monitor_factory.get_monitor",
+            "LOCATION": "redis5://:J8689588@175.178.235.132:6379/0",
+            "OPTIONS": {
+            },
+        }
     },
 
-    # 进行函数运行的一些持久化操作，默认为redis进行保存
-    'PERSISTENCE': {
-        "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
-        "LOCATION": "",
-        "OPTIONS": {},
+    # 进行函数运行的一些持久化操作
+    'STORE': {
+        "default": {
+            "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
+            "LOCATION": "",
+            "OPTIONS": {},
+        }
     },
     # 这里的scheduler 还需要去完成获取所有
     'SCHEDULER': {
@@ -28,10 +36,6 @@ DEFAULTS = {
         "SAVE_STATUS": True,  # 是否保存函数的运行状态,使用DATABASES配置
         "SAVE_RESULT": True,  # 是否保存函数的运行结果,使用DATABASES配置
         "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,  # 是否使用分布式控制频率
-        "publisher_CLASS": "funboost.factories.publisher_factory.get_publisher",
-        "CONSUMER_CLASS": "funboost.factories.consumer_factory.get_consumer",
-        # 监控类，完成对所有当前存在的任务的捕获，以及心跳上报，获取所有的任务，任务启停，对任务中间状态的干涉等等。
-        "MONITOR_CLASS": "funboost.factories.monitor_factory.get_monitor",
         "CONCURRENT": {
             # 这里的模式不能被覆写
             "MODE": SchedulerConcurrentModeEnum.THREAD,
@@ -46,13 +50,12 @@ DEFAULTS = {
         },
         # 默认的调度参数
         "DEFAULT_PARAMS": {
-            #
             "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,
             "AUTO_START_CONSUMING": True,
             "SUPPORT_REMOTE_KILL_TASK": True,
             "TASK_FILTER": True,
             "MSG_EXPIRE_SECONDS": None,
-            "IS_USING_RPC_MODE": True, # 是否支持发布端获取函数运行结果
+            "IS_USING_RPC_MODE": True,  # 是否支持发布端获取函数运行结果
             "FUNCTION_TIMEOUT": 0,
             "MAX_RETRY_TIMES": 3,
             "PUSH_TO_DLX_QUEUE_WHEN_RETRY_MAX_TIMES": False,
