@@ -136,7 +136,7 @@ class AbstractPublisher(LoggerLevelSetterMixin, metaclass=abc.ABCMeta, ):
         :param func_kwargs:
         :return:
         """
-        # print(func_args, func_kwargs, self.publish_params_checker.all_arg_name)
+        # print(func_args, default_kwargs, self.publish_params_checker.all_arg_name)
         msg_dict = func_kwargs
         # print(msg_dict)
         # print(self.publish_params_checker.position_arg_name_list)

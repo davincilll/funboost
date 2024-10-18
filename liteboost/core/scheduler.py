@@ -21,6 +21,16 @@ from liteboost.settings import settings
 
 
 class Scheduler:
+    """
+    基于全局扫描机制，完成定时任务的自动发现
+    """
+    """
+    以非装饰器的方式运行，在运行的时候传递运行参数以及函数参数进行消费信息的投递，
+    这里需要保证后续变更中函数的位置不变，
+    改为基于注解的全局扫描自动发现和注册，不过还是需要自己手动启动Scheduler去完成这个过程
+    todo：支持使用注解的方式在函数上进行标注，add_job 的时候自动读取该参数
+    """
+
     def __init__(self):
         self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
         self.consumer = import_string(settings.SCHEDULER["CONSUMER"])
@@ -33,18 +43,40 @@ class Scheduler:
 
     def check_booster_params(self, params: BoostParams):
         # 检测运行参数是否和broker匹配
+        # 检测参数是否和函数类型匹配
         pass
+
+    def auto_discovery(self):
+        """
+        自动发现完成队列与函数信息的注册，供start_queue中使用
+        """
 
     def add_job(self, func: typing.Callable, booster_params: BoostParams):
-        pass
-
-    def start(self):
         """
-        自动根据
+        调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """
         pass
 
-    def stop(self):
+    def start_queue(self, queue_name: str):
+        """
+        启动当前节点对某个队列的消费
+        """
+
+    def add_and_start(self, func: typing.Callable, queue_name: str, booster_params: BoostParams):
+        """
+        向队列中添加任务并启动当前节点对该队列的消费
+        """
+
+    def start_queues(self, queue_name_list: typing.List[str] = None):
+        """
+        启动当前节点对指定的队列消费
+        """
+        pass
+
+    def run_monitor(self):
+        """
+        启动当前节点对所有分布式集群的监控
+        """
         pass
 
 
