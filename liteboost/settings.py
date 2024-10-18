@@ -1,6 +1,6 @@
 import importlib
 
-from fun_scheduler.core.enums import SchedulerConcurrentModeEnum
+from liteboost.core.enums import SchedulerConcurrentModeEnum
 
 DEFAULTS = {
     "LOGGER": {

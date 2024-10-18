@@ -5,8 +5,6 @@ import types
 import typing
 from functools import wraps
 
-from fun_scheduler.core.utils.module_loading import import_string
-from fun_scheduler.settings import settings
 from funboost.concurrent_pool.async_helper import simple_run_in_executor
 from funboost.core.func_params_model import BoosterParams, PriorityConsumingControlConfig
 from funboost.core.loggers import flogger, logger_prompt
@@ -14,10 +12,12 @@ from funboost.core.msg_result_getter import AsyncResult, AioAsyncResult
 from funboost.factories.consumer_factory import get_consumer
 from funboost.utils.class_utils import ClsHelper
 from funboost.utils.ctrl_c_end import ctrl_c_recv
+from liteboost.core.models import BoostParams
+from liteboost.core.utils.module_loading import import_string
+from liteboost.settings import settings
 
 
 # 将scheduler做成一个池类复用，用队列就可以了
-
 
 
 class Scheduler:
@@ -42,6 +42,10 @@ class Scheduler:
         """
         自动根据
         """
+        pass
+
+    def stop(self):
+        pass
 
 
 class Booster:

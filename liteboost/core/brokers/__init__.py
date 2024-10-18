@@ -1,9 +1,9 @@
 import abc
 
-from fun_scheduler.settings import settings
+from liteboost.settings import settings
 
 
-class BaseBroker():
+class BaseBroker:
 
     def get_message(self):
         pass
