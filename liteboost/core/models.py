@@ -8,7 +8,7 @@ class FuncTypeEnum(Enum):
     COMMON_FUNCTION = 'COMMON_FUNCTION'
     INSTANCE_METHOD = 'INSTANCE_METHOD'
     CLASS_METHOD = 'CLASS_METHOD'
-    STATIC_METHOD = 'STATIC_METHOD'
+    # STATIC_METHOD = 'STATIC_METHOD' # 静态方法与COMMON方法是等同的
 
 
 class FuncInfo:
@@ -68,14 +68,14 @@ class BoostParams:
     @staticmethod
     def _get_func_type(func):
         """ 判断函数的类型并返回对应的 FuncTypeEnum """
-        if isinstance(func, staticmethod):
-            return FuncTypeEnum.STATIC_METHOD
-        elif isinstance(func, classmethod):
+        # 获取函数的参数列表
+        signature = inspect.signature(func)
+        params = list(signature.parameters.keys())
+        if params and params[0] == 'cls':
             return FuncTypeEnum.CLASS_METHOD
-        elif hasattr(func, '__self__'):
+        elif params and params[0] == 'self':
             return FuncTypeEnum.INSTANCE_METHOD
-        else:
-            return FuncTypeEnum.COMMON_FUNCTION
+        return FuncTypeEnum.COMMON_FUNCTION
 
     @staticmethod
     def _get_default_kwargs(func):
@@ -94,9 +94,30 @@ class BoostParams:
 # 使用示例
 if __name__ == '__main__':
     @BoostParams(queue_name='task_queue', max_retry_times=5, msg_expire_seconds=60)
-    def my_task_function(param1, param2):
+    def my_task_function0(param1, param2):
         print(f"Executing task with {param1} and {param2}")
 
 
-    tk = my_task_function
+    class Test:
+        # @BoostParams(queue_name='task_queue', max_retry_times=5, msg_expire_seconds=60)
+        def my_task_function1(self, param1, param2):
+            print(f"Executing task with {param1} and {param2}")
+
+        @classmethod
+        @BoostParams(queue_name='task_queue', max_retry_times=5, msg_expire_seconds=60)
+        def my_task_function2(cls, param2):
+            print(f"Executing task with {param2}")
+
+        @staticmethod
+        @BoostParams(queue_name='task_queue', max_retry_times=5, msg_expire_seconds=60)
+        def my_task_function3(param1):
+            print(f"Executing task with {param1}")
+
+
+    tk = my_task_function0
+    tk1 = Test().my_task_function1
+    tk2 = Test.my_task_function2
+    tk3 = Test.my_task_function3
     print(tk)
+    print(tk2)
+    print(tk3)
