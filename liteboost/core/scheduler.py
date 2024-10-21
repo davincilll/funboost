@@ -20,9 +20,28 @@ from liteboost.settings import settings
 # 将scheduler做成一个池类复用，用队列就可以了
 
 
+class Booster:
+    """
+    Booster 在每个函数声明的时候会注册一个Booster，同时会根据不同的参数去新进行注册
+    这里每个Booster有一个可覆盖的属性
+    """
+    def __init__(self):
+        # 根据参数进行注册
+        self.func_info = None
+        self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
+        self.consumer = import_string(settings.SCHEDULER["CONSUMER"])
+        self.monitor = import_string(settings.SCHEDULER["MONITOR"])
+        self.concurrent_params = settings.SCHEDULER["CONCURRENT_PARAMS"]
+        self.logger = None
+        self.broker = import_string(settings.BROKER["BACKEND"])
+        # 持久化处理器
+        self.persistence_handler = import_string(settings.PERSISTENCE["BACKEND"])
+        # 默认启动参数
+        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
 class Scheduler:
     """
-    基于全局扫描机制，完成定时任务的自动发现
+    这里会维护一张表去完成存在的queue和Booster以及函数的对应关系。
+    可以使用自动扫描机制，扫描静态的Booster。但是如何在分布式环境下如何维护动态的Booster。
     """
     """
     以非装饰器的方式运行，在运行的时候传递运行参数以及函数参数进行消费信息的投递，
@@ -35,18 +54,9 @@ class Scheduler:
     _instance = {}
 
     def __init__(self):
-        self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
-        self.consumer = import_string(settings.SCHEDULER["CONSUMER"])
-        self.monitor = import_string(settings.SCHEDULER["MONITOR"])
-        self.concurrent_params = settings.SCHEDULER["CONCURRENT_PARAMS"]
-        self.logger = None
-        self.broker = import_string(settings.BROKER["BACKEND"])
-        # 持久化处理器
-        self.persistence_handler = import_string(settings.PERSISTENCE["BACKEND"])
-        # 默认启动参数
-        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
 
-    def check_booster_params(self, params: BoostParams):
+
+    def check_booster_params(self, queue_name):
         # 检测运行参数是否和broker匹配
         # 检测参数是否和函数类型匹配
         pass
@@ -56,7 +66,7 @@ class Scheduler:
         自动发现完成队列与函数信息的注册，供start_queue中使用
         """
 
-    def add_task(self, func: typing.Callable, booster_params: BoostParams):
+    def add_task(self, queue_name, func: typing.Callable, **kwargs):
         """
         调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """

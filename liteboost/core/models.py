@@ -4,6 +4,8 @@ import typing
 from enum import Enum
 from functools import wraps
 
+from funboost import Booster
+
 
 class FuncTypeEnum(Enum):
     COMMON_FUNCTION = 'COMMON_FUNCTION'
@@ -27,6 +29,19 @@ class FuncInfo:
         return (f"FuncInfo(func_path={self.func_path}, func_name={self.func_name}, "
                 f"func_type={self.func_type}, func_kwargs={self.func_kwargs})")
 
+
+class Task:
+    """
+    Task 注解，标注这个是一个任务Task
+    """
+    # 可以传递的参数有queue_name,BoostParams，建立一个booster实例
+    # booster实例包括BoostParams和FuncInfo
+    # booster在初始化的时候也需要根据BoostParams和FuncInfo参数build 消费者发布者持久化组broker等等。
+    # 在scheduler中 add_task 的时候可以动态的添加函数的参数，以及boostParams的覆盖，这些是动态参数
+    # 在scheduler中，add_task 根据函数对象的属性找到对应的booster，并调用其发布任务。
+    # booster的静态注册通过扫描机制来完成，从而在多个运行钩子中，定位到对应的booster，当运行时通过queue_name找到对应的booster进行启动
+    # scheduler中的注册表包括，queue_name,func,booster,在静态扫描注册的过程中完成。
+    # 新增queue的时候会共用booster
 
 class BoostParams:
     """
@@ -54,6 +69,10 @@ class BoostParams:
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
 
+        self.build_booster(wrapper, func)  # noqa
+        return wrapper
+
+    def build_booster(self, wrapper, func):
         # 自动生成 FuncInfo
         func_type = self._get_func_type(func)
         default_kwargs = self._get_default_kwargs(func)
@@ -68,11 +87,11 @@ class BoostParams:
             default_kwargs=default_kwargs,  # 存储参数默认值信息
             args_count=args_count,
         )
-        # 将 BoostParams 实例和 FuncInfo 添加到函数
+        wrapper.booster = Booster()
+        # 注册 BoostParams 和 FuncInfo实例
         wrapper.boost_params = self
         wrapper.func_info = func_info
-
-        return wrapper
+        # 注册Booster实例
 
     @staticmethod
     def _get_func_type(func):

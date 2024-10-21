@@ -12,7 +12,7 @@ def SynchronizedQueueMultiton():  # noqa
         @wraps(class_method)
         def wrapper(cls, *args, **kwargs):
             with lock:
-                if
+
             return class_method(instance, *args, **kwargs)
 
         return wrapper
