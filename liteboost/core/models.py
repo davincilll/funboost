@@ -1,6 +1,7 @@
 import inspect
 import json
 import typing
+from datetime import datetime
 from enum import Enum
 from functools import wraps
 
@@ -30,10 +31,69 @@ class FuncInfo:
                 f"func_type={self.func_type}, func_kwargs={self.func_kwargs})")
 
 
+class PriorityControlConfig:
+    """
+    覆盖BoostParams优先级的配置
+    """
+    function_timeout: typing.Union[float, int] = 0
+    max_retry_times: int = None
+    msg_expire_seconds: int = None # 消息过期时间
+    use_rpc_mode: bool = None
+    countdown: typing.Union[float, int] = None  # 发布多少秒后执行
+    eta: datetime = None  # 定时任务
+    """
+    这里的执行逻辑不太同，上面一个是自己定义的时候使用的，当收到消息的时候就判断的，下面一个是apscheduler猴子补丁使用的，只保留一个就可以了
+    """
+    broker_extra_config: dict = None # 中间件支持的其他配置
+
+
+class BoostParams:
+    """
+    为装饰的函数自动注册 BoostParams 参数和 FuncInfo 信息
+    """
+    max_retry_times: int
+    msg_expire_seconds: typing.Union[float, int]
+    obj_init_params: dict
+    broker_group: str
+    broker_extra_config: dict = {}  # 加上一个不同种类中间件非通用的配置,不同中间件自身独有的配置，不是所有中间件都兼容的配置，因为框架支持30种消息队列，消息队列不仅仅是一般的先进先出queue这么简单的概念，
+    # 例如kafka支持消费者组，rabbitmq也支持各种独特概念例如各种ack机制 复杂路由机制，有的中间件原生能支持消息优先级有的中间件不支持,每一种消息队列都有独特的配置参数意义，可以通过这里传递。每种中间件能传递的键值对可以看consumer类的 BROKER_EXCLUSIVE_CONFIG_DEFAULT
+    persistence_handler_group: str
+    concurrent_num: int = 50  # 并发数量，并发种类由concurrent_mode决定
+    qps: typing.Union[float, int] = None
+    use_distributed_frequency_control: bool = False
+    send_consumer_heartbeat_to_redis: bool = False
+    max_retry_times: int = 3
+    retry_interval_seconds: typing.Union[float, int] = 0
+    push_to_dlx_queue_when_retry_max_times: bool = False  # 函数达到最大重试次数仍然没成功，是否发送到死信队列,死信队列的名字是 队列名字 + _dlx。
+    function_timeout: typing.Union[int, float] = 0  # 超时秒数，函数运行超过这个时间，则自动杀死函数。为0是不限制。 谨慎使用,非必要别去设置超时时间,设置后性能会降低(因为需要把用户函数包装到另一个线单独的程中去运行),而且突然强制超时杀死运行中函数,可能会造成死锁.(例如用户函数在获得线程锁后突然杀死函数,别的线程再也无法获得锁了)
+    msg_expire_seconds: typing.Union[float, int] = None  # 消息过期时间,可以设置消息是多久之前发布的就丢弃这条消息,不运行. 为None则永不丢弃
+    task_filter: bool = False  # 是否对函数入参进行过滤去重.
+    task_filter_expire_seconds: int = 0  # 任务过滤的失效期，为0则永久性过滤任务。例如设置过滤过期时间是1800秒 ， 30分钟前发布过1 + 2 的任务，现在仍然执行，如果是30分钟以内执行过这个任务，则不执行1 + 2
+    use_rpc_mode: bool = False  # 是否使用rpc模式，可以在发布端获取消费端的结果回调，但消耗一定性能，使用async_result.result时候会等待阻塞住当前线程。
+    rpc_result_expire_seconds: int = 600  # 保存rpc结果的过期时间.
+    remote_kill_task: bool = False  # 是否支持远程任务杀死功能，如果任务数量少，单个任务耗时长，确实需要远程发送命令来杀死正在运行的函数，才设置为true，否则不建议开启此功能。(是把函数放在单独的线程中实现的,随时准备线程被远程命令杀死,所以性能会降低)
+    not_run_by_specify_time_effect: bool = False  # 是否使不运行的时间段生效
+    run_by_specify_time: tuple = ('10:00:00', '22:00:00')  # 不运行的时间段,在这个时间段自动不运行函数.
+    schedule_tasks_on_main_thread: bool = False  # 直接在主线程调度任务，意味着不能直接在当前主线程同时开启两个消费者。
+    auto_start_consuming_message: bool = False  # 是否在定义后就自动启动消费，无需用户手动写 .consume() 来启动消息消费。
+
+    def __init__(self):
+        pass
+
+    def __call__(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        self.build_booster(wrapper, func)  # noqa
+        return wrapper
+
+
 class Task:
     """
     Task 注解，标注这个是一个任务Task
     """
+
     # 可以传递的参数有queue_name,BoostParams，建立一个booster实例
     # booster实例包括BoostParams和FuncInfo
     # booster在初始化的时候也需要根据BoostParams和FuncInfo参数build 消费者发布者持久化组broker等等。
@@ -42,56 +102,26 @@ class Task:
     # booster的静态注册通过扫描机制来完成，从而在多个运行钩子中，定位到对应的booster，当运行时通过queue_name找到对应的booster进行启动
     # scheduler中的注册表包括，queue_name,func,booster,在静态扫描注册的过程中完成。
     # 新增queue的时候会共用booster
+    def __init__(self, queue_name: str, BoostParams: BoostParams = None):
+        pass
 
-class BoostParams:
-    """
-    为装饰的函数自动注册 BoostParams 参数和 FuncInfo 信息
-    """
+    def build_booster(self, func: typing.Callable, boost_params: BoostParams) -> Booster:
+        pass
 
-    def __init__(self, queue_name: str, max_retry_times: int = 3, msg_expire_seconds: typing.Union[float, int] = None,
-                 obj_init_params=None, broker_group: str = "default", persistence_handler_group: str = "default"):
-        self.queue_name = queue_name
-        self.max_retry_times = max_retry_times
-        self.msg_expire_seconds = msg_expire_seconds
-        self.obj_init_params = obj_init_params
-        # 默认选择的broker组,通过这个可以根据参数动态的加载该队列使用什么broker作为中间件,默认为default
-        self.broker_group = broker_group
-        # 默认选择的持久化组，通过这个参数动态的加载该队列使用什么数据库作为持久化存储,默认为default
-        self.persistence_handler_group = persistence_handler_group
-
-    def __repr__(self):
-        return (f"BoostParams(queue_name={self.queue_name}, "
-                f"max_retry_times={self.max_retry_times}, msg_expire_seconds={self.msg_expire_seconds})")
-
-    def __call__(self, func):
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        self.build_booster(wrapper, func)  # noqa
-        return wrapper
-
-    def build_booster(self, wrapper, func):
-        # 自动生成 FuncInfo
-        func_type = self._get_func_type(func)
-        default_kwargs = self._get_default_kwargs(func)
-        args_count = self._get_args_count(func)
-
-        if func_type == FuncTypeEnum.INSTANCE_METHOD and self.obj_init_params is None:
-            raise ValueError("对于类的实例化方法，需要在BoostParams中传递obj_init_params以供在分布式环境中进行执行")
-        func_info = FuncInfo(
-            func_path=func.__module__ + '.' + func.__qualname__,
-            func_name=func.__name__,
-            func_type=func_type,
-            default_kwargs=default_kwargs,  # 存储参数默认值信息
-            args_count=args_count,
-        )
-        wrapper.booster = Booster()
-        # 注册 BoostParams 和 FuncInfo实例
-        wrapper.boost_params = self
-        wrapper.func_info = func_info
-        # 注册Booster实例
+        def get_func_info(self, func):
+            """
+            根据函数func生成func_info
+            """
+            func_type = self._get_func_type(func)
+            default_kwargs = self._get_default_kwargs(func)
+            args_count = self._get_args_count(func)
+            return FuncInfo(
+                func_path=func.__module__ + '.' + func.__qualname__,
+                func_name=func.__name__,
+                func_type=func_type,
+                default_kwargs=default_kwargs,  # 存储参数默认值信息
+                args_count=args_count,
+            )
 
     @staticmethod
     def _get_func_type(func):

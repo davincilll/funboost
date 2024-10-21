@@ -38,7 +38,7 @@ DEFAULTS = {
         },
     },
     # 进行函数运行的一些持久化操作，默认为redis进行保存
-    'PERSISTENCE': {
+    'STORE': {
         "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
         "LOCATION": "",
         "OPTIONS": {},

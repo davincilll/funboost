@@ -3,11 +3,6 @@ import importlib
 from liteboost.core.enums import SchedulerConcurrentModeEnum
 
 DEFAULTS = {
-    "LOGGER": {
-        "SAVE_LOG": True,  # 是否保存运行日志，在控制台发布
-        "SAVE_LOG_LEVEL": "INFO",  # 日志级别
-        "LOG_FILE_PATH": "",  # 日志文件路径
-    },
     'BROKER': {
         "default": {
             # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
@@ -21,13 +16,18 @@ DEFAULTS = {
             },
         }
     },
-
     # 进行函数运行的一些持久化操作
     'STORE': {
         "default": {
+            "ENABLE": True,
             "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
             "LOCATION": "",
-            "OPTIONS": {},
+            "OPTIONS": {
+                "SAVE_STATUS": True,  # 保存函数状态
+                "SAVE_RESULT": True,  # 保存函数结果
+                "SAVE_ARGUMENTS": True,  # 保存函数入参
+                "SAVE_TIME": True,  # 是否保存函数运行时间
+            },
         }
     },
     # 这里的scheduler 还需要去完成获取所有
@@ -36,6 +36,7 @@ DEFAULTS = {
         "SAVE_STATUS": True,  # 是否保存函数的运行状态,使用DATABASES配置
         "SAVE_RESULT": True,  # 是否保存函数的运行结果,使用DATABASES配置
         "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,  # 是否使用分布式控制频率
+
         "CONCURRENT": {
             # 这里的模式不能被覆写
             "MODE": SchedulerConcurrentModeEnum.THREAD,
@@ -47,6 +48,11 @@ DEFAULTS = {
             "ENABLE": False,
             "LOCATION": "",
             "OPTIONS": {},
+        },
+        "LOGGER": {
+            "SAVE_LOG": True,  # 是否保存运行日志，在控制台发布
+            "SAVE_LOG_LEVEL": "INFO",  # 日志级别
+            "LOG_FILE_PATH": "",  # 日志文件路径
         },
         # 默认的调度参数
         "DEFAULT_PARAMS": {
