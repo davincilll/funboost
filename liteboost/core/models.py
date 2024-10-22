@@ -1,11 +1,78 @@
 import inspect
 import json
 import typing
+from collections import OrderedDict
 from datetime import datetime
 from enum import Enum
 from functools import wraps
 
+from pydantic import BaseModel
+
 from funboost import Booster
+
+
+class BaseJsonAbleModel(BaseModel):
+    """
+    因为model字段包括了 函数和自定义类型的对象,无法直接json序列化,需要自定义json序列化
+    """
+
+    def get_str_dict(self) -> dict:
+        model_dict: dict = self.dict()  # noqa
+        model_dict_copy = OrderedDict()
+        # 填充model_dict_copy
+        for k, v in model_dict.items():
+            if isinstance(v, typing.Callable):
+                model_dict_copy[k] = str(v)
+            elif type(v).__module__ != "builtins":  # 自定义类型的对象,json不可序列化,需要转化下.
+                model_dict_copy[k] = str(v)
+            else:
+                model_dict_copy[k] = v
+        return model_dict_copy
+
+    def json_str_value(self) -> str:
+        """
+        json序列化
+        """
+        try:
+            return json.dumps(self.get_str_dict(), ensure_ascii=False, )
+        except TypeError as e:
+            return str(self.get_str_dict())
+
+    def update_from_dict(self, dictx: dict):
+        """
+        从字典中更新属性
+        """
+        for k, v in dictx.items():
+            setattr(self, k, v)
+        return self
+
+    def update_from_kwargs(self, **kwargs):
+        """
+        从kwargs中更新属性
+        """
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        return self
+
+    def update_from_model(self, modelx: BaseModel):
+        """
+        从另一个model中更新属性
+        """
+        for k, v in modelx.model_dump().items():
+            setattr(self, k, v)
+        return self
+
+    @staticmethod
+    def init_by_another_model(model_type: typing.Type[BaseModel], modelx: BaseModel):
+        init_dict = {}
+        for k, v in modelx.model_dump().items():
+            if k in model_type.model_fields.keys():
+                init_dict[k] = v
+        return model_type(**init_dict)
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "forbid"
 
 
 class FuncTypeEnum(Enum):
@@ -15,44 +82,41 @@ class FuncTypeEnum(Enum):
     # STATIC_METHOD = 'STATIC_METHOD' # 静态方法与COMMON方法是等同的
 
 
-class FuncInfo:
-    def __init__(self, func_path: str, func_name: str, func_type: FuncTypeEnum, args_count: int,
-                 default_kwargs=None, ):
-        if default_kwargs is None:
-            default_kwargs = {}
-        self.func_path = func_path
-        self.func_name = func_name
-        self.func_type = func_type
-        self.func_kwargs = default_kwargs
-        self.args_count = args_count
+class FuncInfo(BaseJsonAbleModel):
+    """
+    函数信息，用于在函数被装饰的时候，自动记录函数路径，函数名，函数类型，函数参数个数，默认参数等。
+    """
+    func_path: str  # 函数路径
+    func_name: str  # 函数名字
+    func_type: FuncTypeEnum  # 函数类型
+    default_kwargs: dict  # 函数默认参数
+    args_count: int  # 函数位置参数格式
 
     def __repr__(self):
         return (f"FuncInfo(func_path={self.func_path}, func_name={self.func_name}, "
                 f"func_type={self.func_type}, func_kwargs={self.func_kwargs})")
 
 
-class PriorityControlConfig:
+class PriorityBoostParams(BaseJsonAbleModel):
     """
-    覆盖BoostParams优先级的配置
+    在进行publish时，对BoostParams优先级更高的运行参数，也包括了定时任务方面的参数
     """
-    function_timeout: typing.Union[float, int] = 0
-    max_retry_times: int = None
-    msg_expire_seconds: int = None # 消息过期时间
-    use_rpc_mode: bool = None
+    function_timeout: typing.Union[float, int] = 0  # 函数超时时间,为0是不限制,超时会进行杀死
+    max_retry_times: int = None  # 重试次数
+    msg_expire_seconds: int = None  # 消息过期时间，消费者接受后判断是否过期，过期则进行丢弃。
+    rpc_mode: bool = None  # 发送方是否可以获取到结果
     countdown: typing.Union[float, int] = None  # 发布多少秒后执行
-    eta: datetime = None  # 定时任务
-    """
-    这里的执行逻辑不太同，上面一个是自己定义的时候使用的，当收到消息的时候就判断的，下面一个是apscheduler猴子补丁使用的，只保留一个就可以了
-    """
-    broker_extra_config: dict = None # 中间件支持的其他配置
+    eta: datetime = None  # 定时什么时候执行
+    broker_extra_config: dict = None  # 中间件支持的其他配置
 
 
-class BoostParams:
+class BoostParams(BaseJsonAbleModel):
     """
     为装饰的函数自动注册 BoostParams 参数和 FuncInfo 信息
     """
     max_retry_times: int
     msg_expire_seconds: typing.Union[float, int]
+    # 对于实例方法，需要传递broker_group
     obj_init_params: dict
     broker_group: str
     broker_extra_config: dict = {}  # 加上一个不同种类中间件非通用的配置,不同中间件自身独有的配置，不是所有中间件都兼容的配置，因为框架支持30种消息队列，消息队列不仅仅是一般的先进先出queue这么简单的概念，
@@ -69,31 +133,17 @@ class BoostParams:
     msg_expire_seconds: typing.Union[float, int] = None  # 消息过期时间,可以设置消息是多久之前发布的就丢弃这条消息,不运行. 为None则永不丢弃
     task_filter: bool = False  # 是否对函数入参进行过滤去重.
     task_filter_expire_seconds: int = 0  # 任务过滤的失效期，为0则永久性过滤任务。例如设置过滤过期时间是1800秒 ， 30分钟前发布过1 + 2 的任务，现在仍然执行，如果是30分钟以内执行过这个任务，则不执行1 + 2
-    use_rpc_mode: bool = False  # 是否使用rpc模式，可以在发布端获取消费端的结果回调，但消耗一定性能，使用async_result.result时候会等待阻塞住当前线程。
+    rpc_mode: bool = False  # 是否使用rpc模式，可以在发布端获取消费端的结果回调，但消耗一定性能，使用async_result.result时候会等待阻塞住当前线程。
     rpc_result_expire_seconds: int = 600  # 保存rpc结果的过期时间.
     remote_kill_task: bool = False  # 是否支持远程任务杀死功能，如果任务数量少，单个任务耗时长，确实需要远程发送命令来杀死正在运行的函数，才设置为true，否则不建议开启此功能。(是把函数放在单独的线程中实现的,随时准备线程被远程命令杀死,所以性能会降低)
     not_run_by_specify_time_effect: bool = False  # 是否使不运行的时间段生效
-    run_by_specify_time: tuple = ('10:00:00', '22:00:00')  # 不运行的时间段,在这个时间段自动不运行函数.
-    schedule_tasks_on_main_thread: bool = False  # 直接在主线程调度任务，意味着不能直接在当前主线程同时开启两个消费者。
+    run_by_specify_time: tuple = ('10:00:00', '22:00:00')  # 不运行的时间段,在这个时间段自动不运行函数。
     auto_start_consuming_message: bool = False  # 是否在定义后就自动启动消费，无需用户手动写 .consume() 来启动消息消费。
-
-    def __init__(self):
-        pass
-
-    def __call__(self, func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        self.build_booster(wrapper, func)  # noqa
-        return wrapper
 
 
 class Task:
     """
     Task 注解，标注这个是一个任务Task
-    """
-
     # 可以传递的参数有queue_name,BoostParams，建立一个booster实例
     # booster实例包括BoostParams和FuncInfo
     # booster在初始化的时候也需要根据BoostParams和FuncInfo参数build 消费者发布者持久化组broker等等。
@@ -102,8 +152,9 @@ class Task:
     # booster的静态注册通过扫描机制来完成，从而在多个运行钩子中，定位到对应的booster，当运行时通过queue_name找到对应的booster进行启动
     # scheduler中的注册表包括，queue_name,func,booster,在静态扫描注册的过程中完成。
     # 新增queue的时候会共用booster
-    def __init__(self, queue_name: str, BoostParams: BoostParams = None):
-        pass
+    """
+    queue_name: str
+    boost_params: BoostParams
 
     def build_booster(self, func: typing.Callable, boost_params: BoostParams) -> Booster:
         pass
@@ -156,22 +207,14 @@ class PublishParams:
     """
 
 
-class TaskInfo:
+class TaskInfo(BaseJsonAbleModel):
     """
     用于在消息队列中存储任务信息的
     """
     task_id = None
     # todo:后续为了控制消息大小，将BoostParams中值得传递的消息提炼出来放到另外一个模型中进行传递
-    boost_params: BoostParams = None
-    func_kwargs: dict = None  # 函数的运行参数
-
-    # todo:完成序列化方法
-    def to_json(self):
-        """将实例属性序列化为 JSON 字符串"""
-        data = self.__dict__.copy()  # 复制实例字典
-        if isinstance(self.boost_params, BoostParams):
-            data['boost_params'] = self.boost_params.to_dict()  # 转换为字典
-        return json.dumps(data)
+    priority_boost_params: PriorityBoostParams = None
+    func_info: dict = None  # 函数的运行参数
 
     @staticmethod
     def from_json(s: str):
@@ -180,9 +223,6 @@ class TaskInfo:
         if 'boost_params' in data:
             data['boost_params'] = BoostParams.from_dict(data['boost_params'])  # 转换回 BoostParams 对象
         return TaskInfo(**data)
-
-    def to_dict(self):
-        return self.__dict__
 
     @staticmethod
     def from_dict(d: dict):

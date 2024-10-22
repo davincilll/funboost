@@ -6,13 +6,14 @@ import logging
 import typing
 from collections import OrderedDict
 
+from pydantic import BaseModel, validator, root_validator, Field
+
 from funboost.concurrent_pool import FunboostBaseConcurrentPool, FlexibleThreadPool, ConcurrentPoolBuilder
 from funboost.constant import ConcurrentModeEnum, BrokerEnum
-from pydantic import BaseModel, validator, root_validator, BaseConfig, Field
-
 from funboost.core.lazy_impoter import funboost_lazy_impoter
 
 
+# todo:这一段有点没看懂
 def _patch_for_pydantic_field_deepcopy():
     from concurrent.futures import ThreadPoolExecutor
     from asyncio import AbstractEventLoop
@@ -33,63 +34,6 @@ def _patch_for_pydantic_field_deepcopy():
 _patch_for_pydantic_field_deepcopy()
 
 
-class BaseJsonAbleModel(BaseModel):
-    """
-    因为model字段包括了 函数和自定义类型的对象,无法直接json序列化,需要自定义json序列化
-    """
-
-    def get_str_dict(self):
-        model_dict: dict = self.dict()  # noqa
-        model_dict_copy = OrderedDict()
-        for k, v in model_dict.items():
-            if isinstance(v, typing.Callable):
-                model_dict_copy[k] = str(v)
-            # elif k in ['specify_concurrent_pool', 'specify_async_loop'] and v is not None:
-            elif type(v).__module__ != "builtins":  # 自定义类型的对象,json不可序列化,需要转化下.
-                model_dict_copy[k] = str(v)
-            else:
-                model_dict_copy[k] = v
-        return model_dict_copy
-
-    def json_str_value(self):
-        try:
-            return json.dumps(self.get_str_dict(), ensure_ascii=False, )
-        except TypeError as e:
-            return str(self.get_str_dict())
-
-    def json_pre(self):
-        try:
-            return json.dumps(self.get_str_dict(), ensure_ascii=False, indent=4)
-        except TypeError as e:
-            return str(self.get_str_dict())
-
-    def update_from_dict(self, dictx: dict):
-        for k, v in dictx.items():
-            setattr(self, k, v)
-        return self
-
-    def update_from_kwargs(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-        return self
-
-    def update_from_model(self, modelx: BaseModel):
-        for k, v in modelx.dict().items():
-            setattr(self, k, v)
-        return self
-
-    class Config(BaseConfig):
-        arbitrary_types_allowed = True
-        # allow_mutation = False
-        extra = "forbid"
-
-    @staticmethod
-    def init_by_another_model(model_type: typing.Type[BaseModel], modelx: BaseModel):
-        init_dict = {}
-        for k, v in modelx.dict().items():
-            if k in model_type.__fields__.keys():
-                init_dict[k] = v
-        return model_type(**init_dict)
 
 
 class FunctionResultStatusPersistanceConfig(BaseJsonAbleModel):
@@ -176,68 +120,46 @@ class BoosterParams(BaseJsonAbleModel):
     is_do_not_run_by_specify_time_effect: bool = False  # 是否使不运行的时间段生效
     do_not_run_by_specify_time: tuple = ('10:00:00', '22:00:00')  # 不运行的时间段,在这个时间段自动不运行函数.
 
-       schedule_tasks_on_main_thread: bool = False  # 直接在主线程调度任务，意味着不能直接在当前主线程同时开启两个消费者。
-
-    is_auto_start_consuming_message: bool = False  # 是否在定义后就自动启动消费，无需用户手动写 .consume() 来启动消息消费。
-
-    consuming_function: typing.Callable = None  # 消费函数,在@boost时候不用指定,因为装饰器知道下面的函数.
-    consuming_function_raw: typing.Callable = None
-
-    broker_kind: str = BrokerEnum.SQLITE_QUEUE  # 中间件选型见3.1章节 https://funboost.readthedocs.io/zh-cn/latest/articles/c3.html
-
-    broker_exclusive_config: dict = {}  # 加上一个不同种类中间件非通用的配置,不同中间件自身独有的配置，不是所有中间件都兼容的配置，因为框架支持30种消息队列，消息队列不仅仅是一般的先进先出queue这么简单的概念，
-    # 例如kafka支持消费者组，rabbitmq也支持各种独特概念例如各种ack机制 复杂路由机制，有的中间件原生能支持消息优先级有的中间件不支持,每一种消息队列都有独特的配置参数意义，可以通过这里传递。每种中间件能传递的键值对可以看consumer类的 BROKER_EXCLUSIVE_CONFIG_DEFAULT
-
-    should_check_publish_func_params: bool = True  # 消息发布时候是否校验消息发布内容,比如有的人发布消息,函数只接受a,b两个入参,他去传2个入参,或者传参不存在的参数名字,  如果消费函数你非要写*args,**kwargs,那就需要关掉发布消息时候的函数入参检查
-
-    consumer_override_cls: typing.Optional[typing.Type] = None  # 使用 consumer_override_cls 和 publisher_override_cls 来自定义重写或新增消费者 发布者,见文档4.21b介绍，
-    publisher_override_cls: typing.Optional[typing.Type] = None
-
-    # func_params_is_pydantic_model: bool = False  # funboost 兼容支持 函数娼还是 pydantic model类型，funboost在发布之前和取出来时候自己转化。
-
-    consuming_function_kind: typing.Optional[str] = None  # 自动生成的信息,不需要用户主动传参,如果自动判断失误就传递。是判断消费函数是函数还是实例方法还是类方法
-
-    auto_generate_info: dict = {}  # 自动生成的信息,不需要用户主动传参.
+    schedule_tasks_on_main_thread: bool = False  # 直接在主线程调度任务，意味着不能直接在当前主线程同时开启两个消费者。
 
 
+@root_validator(skip_on_failure=True)
+def check_values(cls, values: dict):
+    # 如果设置了qps，并且cocurrent_num是默认的50，会自动开了500并发，由于是采用的智能线程池任务少时候不会真开那么多线程而且会自动缩小线程数量。具体看ThreadPoolExecutorShrinkAble的说明
+    # 由于有很好用的qps控制运行频率和智能扩大缩小的线程池，此框架建议不需要理会和设置并发数量只需要关心qps就行了，框架的并发是自适应并发数量，这一点很强很好用。
+    if values['qps'] and values['concurrent_num'] == 50:
+        values['concurrent_num'] = 500
+    if values['concurrent_mode'] == ConcurrentModeEnum.SINGLE_THREAD:
+        values['concurrent_num'] = 1
 
-    @root_validator(skip_on_failure=True)
-    def check_values(cls, values: dict):
+    values['is_send_consumer_hearbeat_to_redis'] = values['is_send_consumer_hearbeat_to_redis'] or values['is_using_distributed_frequency_control']
 
-        # 如果设置了qps，并且cocurrent_num是默认的50，会自动开了500并发，由于是采用的智能线程池任务少时候不会真开那么多线程而且会自动缩小线程数量。具体看ThreadPoolExecutorShrinkAble的说明
-        # 由于有很好用的qps控制运行频率和智能扩大缩小的线程池，此框架建议不需要理会和设置并发数量只需要关心qps就行了，框架的并发是自适应并发数量，这一点很强很好用。
-        if values['qps'] and values['concurrent_num'] == 50:
-            values['concurrent_num'] = 500
-        if values['concurrent_mode'] == ConcurrentModeEnum.SINGLE_THREAD:
-            values['concurrent_num'] = 1
+    if values['concurrent_mode'] not in ConcurrentModeEnum.__dict__.values():
+        raise ValueError('设置的并发模式不正确')
+    if values['broker_kind'] in [BrokerEnum.REDIS_ACK_ABLE, BrokerEnum.REDIS_STREAM, BrokerEnum.REDIS_PRIORITY, BrokerEnum.RedisBrpopLpush]:
+        values['is_send_consumer_hearbeat_to_redis'] = True  # 需要心跳进程来辅助判断消息是否属于掉线或关闭的进程，需要重回队列
+    # if not set(values.keys()).issubset(set(BoosterParams.__fields__.keys())):
+    #     raise ValueError(f'{cls.__name__} 的字段包含了父类 BoosterParams 不存在的字段')
+    for k in values.keys():
+        if k not in BoosterParams.__fields__.keys():
+            raise ValueError(f'{cls.__name__} 的字段新增了父类 BoosterParams 不存在的字段 "{k}"')  # 使 BoosterParams的子类,不能增加字段,只能覆盖字段.
+    return values
 
-        values['is_send_consumer_hearbeat_to_redis'] = values['is_send_consumer_hearbeat_to_redis'] or values['is_using_distributed_frequency_control']
 
-        if values['concurrent_mode'] not in ConcurrentModeEnum.__dict__.values():
-            raise ValueError('设置的并发模式不正确')
-        if values['broker_kind'] in [BrokerEnum.REDIS_ACK_ABLE, BrokerEnum.REDIS_STREAM, BrokerEnum.REDIS_PRIORITY, BrokerEnum.RedisBrpopLpush]:
-            values['is_send_consumer_hearbeat_to_redis'] = True  # 需要心跳进程来辅助判断消息是否属于掉线或关闭的进程，需要重回队列
-        # if not set(values.keys()).issubset(set(BoosterParams.__fields__.keys())):
-        #     raise ValueError(f'{cls.__name__} 的字段包含了父类 BoosterParams 不存在的字段')
-        for k in values.keys():
-            if k not in BoosterParams.__fields__.keys():
-                raise ValueError(f'{cls.__name__} 的字段新增了父类 BoosterParams 不存在的字段 "{k}"')  # 使 BoosterParams的子类,不能增加字段,只能覆盖字段.
-        return values
+def __call__(self, func):
+    """
+    新增加一种语法,
+    一般是使用@boost(BoosterParams(queue_name='q1',qps=2))，你如果图方便可以使用 @BoosterParams(queue_name='q1',qps=2)这样的写法。
 
-    def __call__(self, func):
-        """
-        新增加一种语法,
-        一般是使用@boost(BoosterParams(queue_name='q1',qps=2))，你如果图方便可以使用 @BoosterParams(queue_name='q1',qps=2)这样的写法。
+    @BoosterParams(queue_name='q1',qps=2) 这个和 @boost(BoosterParams(queue_name='q1',qps=2)) 写法等效,
 
-        @BoosterParams(queue_name='q1',qps=2) 这个和 @boost(BoosterParams(queue_name='q1',qps=2)) 写法等效,
-
-        @BoosterParams(queue_name='q1',qps=2)
-        def f(a,b):
-            print(a,b)
-        :param func:
-        :return:
-        """
-        return funboost_lazy_impoter.boost(self)(func)
+    @BoosterParams(queue_name='q1',qps=2)
+    def f(a,b):
+        print(a,b)
+    :param func:
+    :return:
+    """
+    return funboost_lazy_impoter.boost(self)(func)
 
 
 class BoosterParamsComplete(BoosterParams):
