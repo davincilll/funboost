@@ -46,19 +46,23 @@ class Scheduler:
             # 对类进行扫描
             for name, obj in inspect.getmembers(mod, inspect.isclass):
                 for method_name, method in inspect.getmembers(obj, inspect.isfunction):
-                    if hasattr(method, 'queue') or hasattr(method, 'booster'):
-                        self.booster_registry[method_name] = {
+                    if hasattr(method, 'queue_name') or hasattr(method, 'booster'):
+                        queue_name = getattr(obj, 'queue_name', None)
+                        booster = getattr(obj, 'booster', None)
+                        self.booster_registry[queue_name] = {
                             'function': method,
-                            'queue': getattr(method, 'queue', None),
-                            'booster': getattr(method, 'booster', None)
+                            'queue_name': queue_name,
+                            'booster': booster
                         }
             # 对函数进行扫描
-            for name, obj in inspect.getmembers(mod, inspect.isfunction):
-                if hasattr(obj, 'queue') or hasattr(obj, 'booster'):
-                    self.booster_registry[name] = {
+            for _, obj in inspect.getmembers(mod, inspect.isfunction):
+                if hasattr(obj, 'queue_name') or hasattr(obj, 'booster'):
+                    queue_name = getattr(obj, 'queue_name', None)
+                    booster = getattr(obj, 'booster', None)
+                    self.booster_registry[queue_name] = {
                         'function': obj,
-                        'queue': getattr(obj, 'queue', None),
-                        'booster': getattr(obj, 'booster', None)
+                        'queue_name': queue_name,
+                        'booster': booster
                     }
 
         # 自动确定项目根目录
@@ -77,10 +81,12 @@ class Scheduler:
                     # 对module进行再次扫描
                     auto_register(module)
 
-    def add_task(self, queue_name, func: typing.Callable, **kwargs):
+    def add_task(self, queue_name: str, **kwargs):
         """
         调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """
+        # 从注册表中获取queue_name对应的函数
+        consuming_function = self.booster_registry[queue_name]['function']
 
         pass
 
