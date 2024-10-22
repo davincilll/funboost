@@ -8,7 +8,11 @@ from functools import wraps
 
 from pydantic import BaseModel
 
-from funboost import Booster
+from liteboost.core.brokers import BaseBroker
+from liteboost.core.consumers import BaseConsumer
+from liteboost.core.publisher import BasePublisher
+from liteboost.core.utils.module_loading import import_string
+from liteboost.settings import settings
 
 
 class BaseJsonAbleModel(BaseModel):
@@ -70,6 +74,15 @@ class BaseJsonAbleModel(BaseModel):
                 init_dict[k] = v
         return model_type(**init_dict)
 
+    @classmethod
+    def init_by_dict(cls, data: dict) -> 'BaseJsonAbleModel':
+        """
+        从字典初始化模型实例
+        """
+        # 过滤掉不允许的字段
+        filtered_data = {k: v for k, v in data.items() if k in cls.model_fields.keys()}
+        return cls(**filtered_data)
+
     class Config:
         arbitrary_types_allowed = True
         extra = "forbid"
@@ -91,10 +104,6 @@ class FuncInfo(BaseJsonAbleModel):
     func_type: FuncTypeEnum  # 函数类型
     default_kwargs: dict  # 函数默认参数
     args_count: int  # 函数位置参数格式
-
-    def __repr__(self):
-        return (f"FuncInfo(func_path={self.func_path}, func_name={self.func_name}, "
-                f"func_type={self.func_type}, func_kwargs={self.func_kwargs})")
 
 
 class PriorityBoostParams(BaseJsonAbleModel):
@@ -121,7 +130,7 @@ class BoostParams(BaseJsonAbleModel):
     broker_group: str
     broker_extra_config: dict = {}  # 加上一个不同种类中间件非通用的配置,不同中间件自身独有的配置，不是所有中间件都兼容的配置，因为框架支持30种消息队列，消息队列不仅仅是一般的先进先出queue这么简单的概念，
     # 例如kafka支持消费者组，rabbitmq也支持各种独特概念例如各种ack机制 复杂路由机制，有的中间件原生能支持消息优先级有的中间件不支持,每一种消息队列都有独特的配置参数意义，可以通过这里传递。每种中间件能传递的键值对可以看consumer类的 BROKER_EXCLUSIVE_CONFIG_DEFAULT
-    persistence_handler_group: str
+    store_group: str
     concurrent_num: int = 50  # 并发数量，并发种类由concurrent_mode决定
     qps: typing.Union[float, int] = None
     use_distributed_frequency_control: bool = False
@@ -136,9 +145,43 @@ class BoostParams(BaseJsonAbleModel):
     rpc_mode: bool = False  # 是否使用rpc模式，可以在发布端获取消费端的结果回调，但消耗一定性能，使用async_result.result时候会等待阻塞住当前线程。
     rpc_result_expire_seconds: int = 600  # 保存rpc结果的过期时间.
     remote_kill_task: bool = False  # 是否支持远程任务杀死功能，如果任务数量少，单个任务耗时长，确实需要远程发送命令来杀死正在运行的函数，才设置为true，否则不建议开启此功能。(是把函数放在单独的线程中实现的,随时准备线程被远程命令杀死,所以性能会降低)
-    not_run_by_specify_time_effect: bool = False  # 是否使不运行的时间段生效
+    run_by_specify_time_effect: bool = False  # 是否使不运行的时间段生效
     run_by_specify_time: tuple = ('10:00:00', '22:00:00')  # 不运行的时间段,在这个时间段自动不运行函数。
-    auto_start_consuming_message: bool = False  # 是否在定义后就自动启动消费，无需用户手动写 .consume() 来启动消息消费。
+    auto_start_consuming: bool = False  # 是否在定义后就自动启动消费，无需用户手动写 .consume() 来启动消息消费。
+
+
+class Booster(BaseJsonAbleModel):
+    """
+    Booster 在每个函数声明的时候会注册一个Booster，同时会根据不同的参数去新进行注册
+    这里每个Booster有一个可覆盖的属性
+    """
+    func_info: FuncInfo
+    broker: BaseBroker
+    publisher: BasePublisher
+    consumer: BaseConsumer
+    monitor: typing.Any
+    store: BaseStore
+    boost_params: BoostParams  # 是对默认配置以及注解配置的综合
+
+    def __init__(self, func_info: FuncInfo, boost_params: BoostParams, **kwargs):
+        # 确定func_info
+        self.func_info = func_info
+
+        # 确定boost_params
+        self.boost_params = BoostParams.init_by_dict(settings.SCHEDULER["DEFAULT_PARAMS"])
+        self.boost_params.update_from_model(boost_params)
+
+        build_broker_info = settings.BROKER[boost_params.broker_group]
+        build_store_info = settings.STORE[boost_params.store_group]
+
+        # 内建broker、store、consumer、publisher
+        self.broker = import_string(build_broker_info["BACKEND"])(build_broker_info["OPTIONS"])
+        self.consumer = import_string(build_broker_info["CONSUMER_CLASS"])()
+        self.publisher = import_string(build_broker_info["PUBLISHER_CLASS"])()
+        self.store = import_string(build_store_info["BACKEND"])(build_store_info["OPTIONS"])
+
+        # 调用父类的构造函数
+        super().__init__(**kwargs)
 
 
 class Task:
@@ -153,26 +196,36 @@ class Task:
     # scheduler中的注册表包括，queue_name,func,booster,在静态扫描注册的过程中完成。
     # 新增queue的时候会共用booster
     """
-    queue_name: str
-    boost_params: BoostParams
 
-    def build_booster(self, func: typing.Callable, boost_params: BoostParams) -> Booster:
-        pass
+    def __init__(self, queue_name: str, boost_params: BoostParams):
+        self.queue_name = queue_name
+        self.boost_params = boost_params
 
-        def get_func_info(self, func):
-            """
-            根据函数func生成func_info
-            """
-            func_type = self._get_func_type(func)
-            default_kwargs = self._get_default_kwargs(func)
-            args_count = self._get_args_count(func)
-            return FuncInfo(
-                func_path=func.__module__ + '.' + func.__qualname__,
-                func_name=func.__name__,
-                func_type=func_type,
-                default_kwargs=default_kwargs,  # 存储参数默认值信息
-                args_count=args_count,
-            )
+    def __call__(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        func_info = self.get_func_info(func)
+        booster = Booster(func_info=func_info, boost_params=self.boost_params)
+        setattr(wrapper, 'queue_name', self.queue_name)
+        setattr(wrapper, 'booster', booster)
+        return wrapper
+
+    def get_func_info(self, func):
+        """
+        根据函数func生成func_info
+        """
+        func_type = self._get_func_type(func)
+        default_kwargs = self._get_default_kwargs(func)
+        args_count = self._get_args_count(func)
+        return FuncInfo(
+            func_path=func.__module__ + '.' + func.__qualname__,
+            func_name=func.__name__,
+            func_type=func_type,
+            default_kwargs=default_kwargs,  # 存储参数默认值信息
+            args_count=args_count,
+        )
 
     @staticmethod
     def _get_func_type(func):

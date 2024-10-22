@@ -20,24 +20,7 @@ from liteboost.settings import settings
 # 将scheduler做成一个池类复用，用队列就可以了
 
 
-class Booster:
-    """
-    Booster 在每个函数声明的时候会注册一个Booster，同时会根据不同的参数去新进行注册
-    这里每个Booster有一个可覆盖的属性
-    """
-    def __init__(self):
-        # 根据参数进行注册
-        self.func_info = None
-        self.publisher = import_string(settings.SCHEDULER["PUBLISHER"])
-        self.consumer = import_string(settings.SCHEDULER["CONSUMER"])
-        self.monitor = import_string(settings.SCHEDULER["MONITOR"])
-        self.concurrent_params = settings.SCHEDULER["CONCURRENT_PARAMS"]
-        self.logger = None
-        self.broker = import_string(settings.BROKER["BACKEND"])
-        # 持久化处理器
-        self.persistence_handler = import_string(settings.PERSISTENCE["BACKEND"])
-        # 默认启动参数
-        self.default_boost_params = settings.SCHEDULER["DEFAULT_PARAMS"]
+
 class Scheduler:
     """
     这里会维护一张表去完成存在的queue和Booster以及函数的对应关系。

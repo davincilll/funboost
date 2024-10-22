@@ -7,7 +7,7 @@ DEFAULTS = {
         "default": {
             # 这里的broker类型，需要去提供连接功能，消息的序列化和反序列化功能。。。。
             "BACKEND": "funboost.factories.consumer_factory.get_consumer",
-            "PUBLISHER_CLASS": "funboost.factories.publisher_factory.get_publisher",
+            "PUBLISHER_CLASS": "funboost.publisher.RedisPublisher",
             "CONSUMER_CLASS": "funboost.factories.consumer_factory.get_consumer",
             # 监控类，完成对所有当前存在的任务的捕获，以及心跳上报，获取所有的任务，任务启停，对任务中间状态的干涉等等。
             "MONITOR_CLASS": "funboost.factories.monitor_factory.get_monitor",
@@ -23,10 +23,6 @@ DEFAULTS = {
             "BACKEND": "funboost.factories.result_persistence_factory.get_result_persistence",
             "LOCATION": "",
             "OPTIONS": {
-                "SAVE_STATUS": True,  # 保存函数状态
-                "SAVE_RESULT": True,  # 保存函数结果
-                "SAVE_ARGUMENTS": True,  # 保存函数入参
-                "SAVE_TIME": True,  # 是否保存函数运行时间
             },
         }
     },
@@ -36,7 +32,6 @@ DEFAULTS = {
         "SAVE_STATUS": True,  # 是否保存函数的运行状态,使用DATABASES配置
         "SAVE_RESULT": True,  # 是否保存函数的运行结果,使用DATABASES配置
         "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,  # 是否使用分布式控制频率
-
         "CONCURRENT": {
             # 这里的模式不能被覆写
             "MODE": SchedulerConcurrentModeEnum.THREAD,
@@ -56,9 +51,9 @@ DEFAULTS = {
         },
         # 默认的调度参数
         "DEFAULT_PARAMS": {
-            "USE_DISTRIBUTED_FREQUENCY_CONTROL": True,
-            "AUTO_START_CONSUMING": True,
-            "SUPPORT_REMOTE_KILL_TASK": True,
+            "use_distributed_frequency_control": True,
+            "auto_start_consuming": True,
+            "max_retry_times": 3,
             "TASK_FILTER": True,
             "MSG_EXPIRE_SECONDS": None,
             "IS_USING_RPC_MODE": True,  # 是否支持发布端获取函数运行结果
