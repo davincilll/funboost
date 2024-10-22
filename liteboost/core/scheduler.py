@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 import os
 import types
 import typing
@@ -13,12 +15,6 @@ from funboost.factories.consumer_factory import get_consumer
 from funboost.utils.class_utils import ClsHelper
 from funboost.utils.ctrl_c_end import ctrl_c_recv
 from liteboost.core.models import BoostParams
-from liteboost.core.utils.module_loading import import_string
-from liteboost.settings import settings
-
-
-# 将scheduler做成一个池类复用，用队列就可以了
-
 
 
 class Scheduler:
@@ -34,20 +30,52 @@ class Scheduler:
     scheduler只负责启动发布和消费
     """
     # 用queue_name 作为键名，存储scheduler,用于支持用户自定义的broker和persistence_handler
-    _instance = {}
+    # 关于函数的注册表
+    booster_registry = {}
 
     def __init__(self):
-
-
-    def check_booster_params(self, queue_name):
-        # 检测运行参数是否和broker匹配
-        # 检测参数是否和函数类型匹配
         pass
 
     def auto_discovery(self):
         """
-        自动发现完成队列与函数信息的注册，供start_queue中使用
+        通过扫描机制完成task函数的静态注册
         """
+
+        # 在包中进行扫描注册
+        def auto_register(mod):
+            # 对类进行扫描
+            for name, obj in inspect.getmembers(mod, inspect.isclass):
+                for method_name, method in inspect.getmembers(obj, inspect.isfunction):
+                    if hasattr(method, 'queue') or hasattr(method, 'booster'):
+                        self.booster_registry[method_name] = {
+                            'function': method,
+                            'queue': getattr(method, 'queue', None),
+                            'booster': getattr(method, 'booster', None)
+                        }
+            # 对函数进行扫描
+            for name, obj in inspect.getmembers(mod, inspect.isfunction):
+                if hasattr(obj, 'queue') or hasattr(obj, 'booster'):
+                    self.booster_registry[name] = {
+                        'function': obj,
+                        'queue': getattr(obj, 'queue', None),
+                        'booster': getattr(obj, 'booster', None)
+                    }
+
+        # 自动确定项目根目录
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        # 自动扫描每一个包
+        for root, _, files in os.walk(project_root):
+            for file in files:
+                if file.endswith('.py') and not file.startswith('__'):
+                    # 模块名
+                    module_name = os.path.splitext(file)[0]
+                    # 相对于project_root模块路径的相对路径
+                    module_path = os.path.relpath(root, project_root).replace(os.sep, '.')
+                    full_module_name = f"{module_path}.{module_name}" if module_path else module_name
+                    # 得到module对象
+                    module = importlib.import_module(full_module_name)
+                    # 对module进行再次扫描
+                    auto_register(module)
 
     def add_task(self, queue_name, func: typing.Callable, **kwargs):
         """

@@ -164,6 +164,7 @@ class Booster(BaseJsonAbleModel):
     boost_params: BoostParams  # 是对默认配置以及注解配置的综合
 
     def __init__(self, func_info: FuncInfo, boost_params: BoostParams, **kwargs):
+        # todo:进行参数检查
         # 确定func_info
         self.func_info = func_info
 
