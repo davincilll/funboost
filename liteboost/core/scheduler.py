@@ -1,20 +1,9 @@
-from __future__ import annotations
-
 import importlib
 import inspect
 import os
-import types
 import typing
-from functools import wraps
 
-from funboost.concurrent_pool.async_helper import simple_run_in_executor
-from funboost.core.func_params_model import BoosterParams, PriorityConsumingControlConfig
-from funboost.core.loggers import flogger, logger_prompt
-from funboost.core.msg_result_getter import AsyncResult, AioAsyncResult
-from funboost.factories.consumer_factory import get_consumer
-from funboost.utils.class_utils import ClsHelper
-from funboost.utils.ctrl_c_end import ctrl_c_recv
-from liteboost.core.models import BoostParams
+from liteboost.core.models import BoostParams, PriorityBoostParams
 
 
 class Scheduler:
@@ -23,10 +12,8 @@ class Scheduler:
     可以使用自动扫描机制，扫描静态的Booster。但是如何在分布式环境下如何维护动态的Booster。
     """
     """
-    以非装饰器的方式运行，在运行的时候传递运行参数以及函数参数进行消费信息的投递，
+    以非装饰器的方式运行，在运行的时候传递覆盖运行参数以及函数参数进行消费信息的投递，
     这里需要保证后续变更中函数的位置不变，
-    改为基于注解的全局扫描自动发现和注册，不过还是需要自己手动启动Scheduler去完成这个过程
-    todo：支持使用注解的方式在函数上进行标注，add_job 的时候自动读取该参数
     scheduler只负责启动发布和消费
     """
     # 用queue_name 作为键名，存储scheduler,用于支持用户自定义的broker和persistence_handler
@@ -81,13 +68,13 @@ class Scheduler:
                     # 对module进行再次扫描
                     auto_register(module)
 
-    def add_task(self, queue_name: str, **kwargs):
+    def add_task(self, queue_name: str, func_kwargs: dict = None, priority_boost_params: PriorityBoostParams = None):
         """
         调用publish去向队列中添加需要启动的函数和参数，这里一个队列可以有不同的函数
         """
         # 从注册表中获取queue_name对应的函数
-        consuming_function = self.booster_registry[queue_name]['function']
-
+        booster = self.booster_registry[queue_name]['booster']
+        # todo:这里就要根据配置进行核心代码的编写了
         pass
 
     def start_queue(self, queue_name: str):
@@ -105,299 +92,3 @@ class Scheduler:
         启动当前节点对指定的队列消费,不传入时则为对所有队列的消费
         """
         pass
-
-
-class TaskMonitor:
-    """
-    完成对任务的监控，包括对任务的启停等等，使用命令转换工具进行转换
-    """
-
-    def clean_tasks(self, queue_name_list: typing.List[str] = None):
-        """
-        清除在所有队列中尚未运行的tasks,可选的接受需要清除的队列的列表
-        """
-        pass
-
-    def get_tasks(self, queue_name_list: typing.List[str] = None):
-        """
-        获取所有的tasks的信息，可选的接受需要查看的队列的列表
-        """
-        pass
-
-    def get_task(self, task_id: str):
-        """
-        获取某个task的信息
-        """
-        pass
-
-    def kill_task(self, task_id: str):
-        """
-        不一定能够支持
-        """
-
-    def get_task_result_by_block(self, task_id: str):
-        """
-        以阻塞的方式获取某个task的结果，如果任务没有执行完成会进行阻塞直至获取到对应的结果，
-        需要开启rpc支持
-        """
-
-
-class Booster:
-
-    def __init__(self, boost_params: BoosterParams = None):
-        self.boost_params: BoosterParams = boost_params.copy()
-
-    def __str__(self):
-        return f'{type(self)}  队列为 {self.queue_name} 函数为 {self.consuming_function} 的 booster'
-
-    def __get__(self, instance, cls):
-        """https://python3-cookbook.readthedocs.io/zh_CN/latest/c09/p09_define_decorators_as_classes.html"""
-        if instance is None:
-            return self
-        else:
-            return types.MethodType(self, instance)
-
-    def __call__(self, *args, **kwargs) -> Booster:
-        if len(kwargs) == 0 and len(args) == 1 and isinstance(args[0], typing.Callable):
-            consuming_function = args[0]
-            self.boost_params.consuming_function = consuming_function
-            self.boost_params.consuming_function_raw = consuming_function
-            # print(consuming_function)
-            # print(ClsHelper.get_method_kind(consuming_function))
-            # print(inspect.getsourcelines(consuming_function))
-            if self.boost_params.consuming_function_kind is None:
-                self.boost_params.consuming_function_kind = ClsHelper.get_method_kind(consuming_function)
-            # if self.boost_params.consuming_function_kind in [FunctionKind.CLASS_METHOD,FunctionKind.INSTANCE_METHOD]:
-            #     if self.boost_params.consuming_function_class_module is None:
-            #         self.boost_params.consuming_function_class_module = consuming_function.__module__
-            #     if self.boost_params.consuming_function_class_name is None:
-            #         self.boost_params.consuming_function_class_name = consuming_function.__qualname__.split('.')[0]
-            logger_prompt.debug(
-                f''' {self.boost_params.queue_name} booster 配置是 {self.boost_params.json_str_value()}''')
-            self.consuming_function = consuming_function
-            self.is_decorated_as_consume_function = True
-
-            consumer = get_consumer(self.boost_params)
-            self.consumer = consumer
-
-            self.publisher = consumer.publisher_of_same_queue
-            self.publish = self.pub = self.apply_async = self._safe_publish
-            self.push = self.delay = self._safe_push
-
-            self.clear = self.clear_queue = consumer.publisher_of_same_queue.clear
-            self.get_message_count = consumer.publisher_of_same_queue.get_message_count
-
-            self.start_consuming_message = self.consume = self.start = consumer.start_consuming_message
-            self.clear_filter_tasks = consumer.clear_filter_tasks
-            self.wait_for_possible_has_finish_all_tasks = consumer.wait_for_possible_has_finish_all_tasks
-
-            self.pause = self.pause_consume = consumer.pause_consume
-            self.continue_consume = consumer.continue_consume
-
-            wraps(consuming_function)(self)
-            BoostersManager.regist_booster(self.queue_name, self)  # 进行注册
-            return self
-        else:
-            return self.consuming_function(*args, **kwargs)
-
-    def _safe_push(self, *func_args, **func_kwargs) -> AsyncResult:
-        """ 多进程安全的,在fork多进程(非spawn多进程)情况下,有的包多进程不能共用一个连接,例如kafka"""
-        consumer = BoostersManager.get_or_create_booster_by_queue_name(self.queue_name).consumer
-        return consumer.publisher_of_same_queue.push(*func_args, **func_kwargs)
-
-    def _safe_publish(self, msg: typing.Union[str, dict], task_id=None,
-                      priority_control_config: PriorityConsumingControlConfig = None) -> AsyncResult:
-        """ 多进程安全的,在fork多进程(非spawn多进程)情况下,很多包跨线程/进程不能共享中间件连接,"""
-        consumer = BoostersManager.get_or_create_booster_by_queue_name(self.queue_name).consumer
-        return consumer.publisher_of_same_queue.publish(msg=msg, task_id=task_id,
-                                                        priority_control_config=priority_control_config)
-
-    async def aio_push(self, *func_args, **func_kwargs) -> AioAsyncResult:
-        """asyncio 生态下发布消息,因为同步push只需要消耗不到1毫秒,所以基本上大概可以直接在asyncio异步生态中直接调用同步的push方法,
-        但为了更好的防止网络波动(例如发布消息到外网的消息队列耗时达到10毫秒),可以使用aio_push"""
-        async_result = await simple_run_in_executor(self.push, *func_args, **func_kwargs)
-        return AioAsyncResult(async_result.task_id, )
-
-    async def aio_publish(self, msg: typing.Union[str, dict], task_id=None,
-                          priority_control_config: PriorityConsumingControlConfig = None) -> AioAsyncResult:
-        """asyncio 生态下发布消息,因为同步push只需要消耗不到1毫秒,所以基本上大概可以直接在asyncio异步生态中直接调用同步的push方法,
-        但为了更好的防止网络波动(例如发布消息到外网的消息队列耗时达到10毫秒),可以使用aio_push"""
-        async_result = await simple_run_in_executor(self.publish, msg, task_id, priority_control_config)
-        return AioAsyncResult(async_result.task_id, )
-
-    # noinspection PyMethodMayBeStatic
-    def multi_process_consume(self, process_num=1):
-        """超高速多进程消费"""
-        from funboost.core.muliti_process_enhance import run_consumer_with_multi_process
-        run_consumer_with_multi_process(self, process_num)
-
-    multi_process_start = multi_process_consume
-
-    # noinspection PyMethodMayBeStatic
-    def multi_process_pub_params_list(self, params_list, process_num=16):
-        """超高速多进程发布，例如先快速发布1000万个任务到中间件，以后慢慢消费"""
-        """
-        用法例如，快速20进程发布1000万任务，充分利用多核加大cpu使用率。
-        @boost('test_queue66c', qps=1/30,broker_kind=BrokerEnum.KAFKA_CONFLUENT)
-        def f(x, y):
-            print(f'函数开始执行时间 {time.strftime("%H:%M:%S")}')
-        if __name__ == '__main__':
-            f.multi_process_pub_params_list([{'x':i,'y':i*3}  for i in range(10000000)],process_num=20)
-            f.consume()
-        """
-        from funboost.core.muliti_process_enhance import multi_process_pub_params_list
-        multi_process_pub_params_list(self, params_list, process_num)
-
-    # noinspection PyDefaultArgument
-    # noinspection PyMethodMayBeStatic
-
-
-class BoostersManager:
-    """
-    消费函数生成Booster对象时候,会自动调用BoostersManager.regist_booster方法,把队列名和入参信息保存到pid_queue_name__booster_map字典中.
-    使用这个类,可以创建booster对象,达到无需使用装饰器的目的.
-    """
-
-    # pid_queue_name__booster_map字典存放 {(进程id,queue_name):Booster对象}
-    pid_queue_name__booster_map = {}  # type: typing.Dict[typing.Tuple[int,str],Booster]
-
-    # queue_name__boost_params_consuming_function_map 字典存放  {queue_name,(@boost的入参字典,@boost装饰的消费函数)}
-    queue_name__boost_params_map = {}  # type: typing.Dict[str,BoosterParams]
-
-    pid_queue_name__has_start_consume_set = set()
-
-    @classmethod
-    def regist_booster(cls, queue_name: str, booster: Booster):
-        """这个是框架在@boost时候自动调用的,无需用户亲自调用"""
-        cls.pid_queue_name__booster_map[(os.getpid(), queue_name)] = booster
-        cls.queue_name__boost_params_map[queue_name] = booster.boost_params
-
-    @classmethod
-    def show_all_boosters(cls):
-        queues = []
-        for pid_queue_name, booster in cls.pid_queue_name__booster_map.items():
-            queues.append(pid_queue_name[1])
-            flogger.debug(f'booster: {pid_queue_name[1]}  {booster}')
-
-    @classmethod
-    def get_all_queues(cls):
-        return cls.queue_name__boost_params_map.keys()
-
-    @classmethod
-    def get_booster(cls, queue_name: str) -> Booster:
-        """
-        当前进程获得booster对象。注意和下面的get_or_create_booster_by_queue_name方法的区别,主要是开了多进程时候有区别.
-        :param queue_name:
-        :return:
-        """
-        pid = os.getpid()
-        key = (pid, queue_name)
-        if key in cls.pid_queue_name__booster_map:
-            return cls.pid_queue_name__booster_map[key]
-        else:
-            err_msg = f'进程 {pid} ，没有 {queue_name} 对应的 booster   , pid_queue_name__booster_map: {cls.pid_queue_name__booster_map}'
-            raise ValueError(err_msg)
-
-    @classmethod
-    def get_or_create_booster_by_queue_name(cls, queue_name, ) -> Booster:
-        """
-        当前进程获得booster对象，如果是多进程,会在新的进程内部创建一个新的booster对象,因为多进程操作有些中间件的同一个conn不行.
-        :param queue_name: 就是 @boost的入参。
-        :return:
-        """
-        pid = os.getpid()
-        key = (pid, queue_name)
-        if key in cls.pid_queue_name__booster_map:
-            return cls.pid_queue_name__booster_map[key]
-        else:
-            boost_params = cls.get_boost_params(queue_name)
-            return Booster(boost_params)(boost_params.consuming_function)
-
-    @classmethod
-    def get_boost_params(cls, queue_name: str) -> (dict, typing.Callable):
-        """
-        这个函数是为了在别的进程实例化 booster，consumer和publisher,获取queue_name队列对应的booster的当时的入参。
-        有些中间件python包的对中间件连接对象不是多进程安全的，不要在进程2中去操作进程1中生成的booster consumer publisher等对象。
-        """
-        return cls.queue_name__boost_params_map[queue_name]
-
-    @classmethod
-    def build_booster(cls, boost_params: BoosterParams) -> Booster:
-        """
-        当前进程获得或者创建booster对象。方便有的人需要在函数内部临时动态根据队列名创建booster,不会无数次临时生成消费者、生产者、创建消息队列连接。
-        :param boost_params: 就是 @boost的入参。
-        :param consuming_function: 消费函数
-        :return:
-        """
-        pid = os.getpid()
-        key = (pid, boost_params.queue_name)
-        if key in cls.pid_queue_name__booster_map:
-            booster = cls.pid_queue_name__booster_map[key]
-        else:
-            if boost_params.consuming_function is None:
-                raise ValueError(f' build_booster 方法的 consuming_function 字段不能为None,必须指定一个函数')
-            flogger.info(f'创建booster {boost_params} {boost_params.consuming_function}')
-            booster = Booster(boost_params)(boost_params.consuming_function)
-        return booster
-
-    @classmethod
-    def push(cls, queue_name, *args, **kwargs):
-        """push发布消息到消息队列 ;
-        """
-        cls.get_or_create_booster_by_queue_name(queue_name).push(*args, **kwargs)
-
-    @classmethod
-    def publish(cls, queue_name, msg):
-        """publish发布消息到消息队列;
-        """
-        cls.get_or_create_booster_by_queue_name(queue_name).publish(msg)
-
-    @classmethod
-    def consume_queues(cls, *queue_names):
-        """
-        启动多个消息队列名的消费,多个函数队列在当前同一个进程内启动消费.
-        这种方式节约总的内存,但无法利用多核cpu
-        """
-        for queue_name in queue_names:
-            cls.get_booster(queue_name).consume()
-        ctrl_c_recv()
-
-    consume = consume_queues
-
-    @classmethod
-    def consume_all_queues(cls, block=True):
-        """
-        启动所有消息队列名的消费,无需一个一个函数亲自 funxx.consume()来启动,多个函数队列在当前同一个进程内启动消费.
-        这种方式节约总的内存,但无法利用多核cpu
-        """
-        for queue_name in cls.get_all_queues():
-            cls.get_booster(queue_name).consume()
-        if block:
-            ctrl_c_recv()
-
-    consume_all = consume_all_queues
-
-    @classmethod
-    def multi_process_consume_queues(cls, **queue_name__process_num):
-        """
-        启动多个消息队列名的消费,传递队列名和进程数,每个队列启动n个单独的消费进程;
-        这种方式总的内存使用高,但充分利用多核cpu
-        例如 multi_process_consume_queues(queue1=2,queue2=3) 表示启动2个进程消费queue1,启动3个进程消费queue2
-        """
-        for queue_name, process_num in queue_name__process_num.items():
-            cls.get_booster(queue_name).multi_process_consume(process_num)
-        ctrl_c_recv()
-
-    m_consume = multi_process_consume_queues
-
-    @classmethod
-    def multi_process_consume_all_queues(cls, process_num=1):
-        """
-        启动所有消息队列名的消费,无需指定队列名,每个队列启动n个单独的消费进程;
-        这种方式总的内存使用高,但充分利用多核cpu
-        """
-        for queue_name in cls.get_all_queues():
-            cls.get_booster(queue_name).multi_process_consume(process_num)
-        ctrl_c_recv()
-
-    m_consume_all = multi_process_consume_all_queues

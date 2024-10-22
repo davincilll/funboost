@@ -153,7 +153,7 @@ class BoostParams(BaseJsonAbleModel):
 class Booster(BaseJsonAbleModel):
     """
     Booster 在每个函数声明的时候会注册一个Booster，同时会根据不同的参数去新进行注册
-    这里每个Booster有一个可覆盖的属性
+    这里的booster 相当于一个容器性质的存在，具体的是由scheduler来执行
     """
     func_info: FuncInfo
     broker: BaseBroker
